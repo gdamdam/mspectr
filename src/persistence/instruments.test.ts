@@ -1,0 +1,217 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { DEFAULT_PATCH, INSTRUMENT_SCHEMA_VERSION, type SavedInstrument } from '../audio/contracts'
+
+// ---------------------------------------------------------------------------
+// Minimal in-memory IndexedDB mock.
+//
+// fake-indexeddb is not installed, so we implement just enough of the IDB
+// surface that db.ts uses: open + onupgradeneeded/onsuccess, createObjectStore,
+// objectStoreNames.contains, transaction → objectStore → put/get/getAll/
+// getAllKeys/delete returning request objects whose onsuccess fires
+// asynchronously, plus db.close(). Requests resolve on a microtask so the
+// promise wiring in withStore is exercised realistically.
+// ---------------------------------------------------------------------------
+
+type Key = string
+
+class FakeRequest<T> {
+  result: T | undefined
+  error: unknown = null
+  onsuccess: (() => void) | null = null
+  onerror: (() => void) | null = null
+  _succeed(value: T) {
+    this.result = value
+    queueMicrotask(() => this.onsuccess?.())
+  }
+}
+
+class FakeObjectStore {
+  constructor(private readonly data: Map<Key, unknown>) {}
+  put(value: unknown, key: Key) {
+    const req = new FakeRequest<undefined>()
+    this.data.set(key, structuredClone(value))
+    req._succeed(undefined)
+    return req
+  }
+  get(key: Key) {
+    const req = new FakeRequest<unknown>()
+    const v = this.data.has(key) ? structuredClone(this.data.get(key)) : undefined
+    req._succeed(v)
+    return req
+  }
+  getAll() {
+    const req = new FakeRequest<unknown[]>()
+    req._succeed(Array.from(this.data.values()).map((v) => structuredClone(v)))
+    return req
+  }
+  getAllKeys() {
+    const req = new FakeRequest<Key[]>()
+    req._succeed(Array.from(this.data.keys()))
+    return req
+  }
+  delete(key: Key) {
+    const req = new FakeRequest<undefined>()
+    this.data.delete(key)
+    req._succeed(undefined)
+    return req
+  }
+}
+
+class FakeTransaction {
+  onabort: (() => void) | null = null
+  error: unknown = null
+  constructor(private readonly stores: Map<string, Map<Key, unknown>>) {}
+  objectStore(name: string) {
+    const map = this.stores.get(name)
+    if (!map) throw new Error(`unknown store ${name}`)
+    return new FakeObjectStore(map)
+  }
+}
+
+class FakeDatabase {
+  stores = new Map<string, Map<Key, unknown>>()
+  objectStoreNames = {
+    contains: (name: string) => this.stores.has(name),
+  }
+  createObjectStore(name: string) {
+    this.stores.set(name, new Map())
+  }
+  transaction(_name: string, _mode: string) {
+    return new FakeTransaction(this.stores)
+  }
+  close() {
+    /* no-op for the mock */
+  }
+}
+
+class FakeOpenRequest {
+  result: FakeDatabase
+  error: unknown = null
+  onupgradeneeded: (() => void) | null = null
+  onsuccess: (() => void) | null = null
+  onerror: (() => void) | null = null
+  onblocked: (() => void) | null = null
+  constructor(db: FakeDatabase, fresh: boolean) {
+    this.result = db
+    queueMicrotask(() => {
+      if (fresh) this.onupgradeneeded?.()
+      this.onsuccess?.()
+    })
+  }
+}
+
+class FakeIDBFactory {
+  private db: FakeDatabase | null = null
+  open(_name: string, _version?: number) {
+    const fresh = this.db === null
+    if (fresh) this.db = new FakeDatabase()
+    return new FakeOpenRequest(this.db as FakeDatabase, fresh)
+  }
+}
+
+// Import AFTER defining the mock; instruments.ts reads the global indexedDB
+// lazily inside openDb, so installing it in beforeEach is sufficient.
+import {
+  deleteInstrument,
+  duplicateInstrument,
+  listInstruments,
+  loadInstrument,
+  renameInstrument,
+  saveInstrument,
+} from './instruments'
+
+const originalIndexedDB = (globalThis as { indexedDB?: unknown }).indexedDB
+
+beforeEach(() => {
+  ;(globalThis as { indexedDB?: unknown }).indexedDB = new FakeIDBFactory()
+})
+
+afterEach(() => {
+  ;(globalThis as { indexedDB?: unknown }).indexedDB = originalIndexedDB
+})
+
+function makeInstrument(id: string, overrides: Partial<SavedInstrument> = {}): SavedInstrument {
+  return {
+    schemaVersion: INSTRUMENT_SCHEMA_VERSION,
+    id,
+    name: `Instrument ${id}`,
+    createdAt: 10,
+    updatedAt: 10,
+    patch: { ...DEFAULT_PATCH },
+    snapshotRefA: null,
+    snapshotRefB: null,
+    sourceLabel: '',
+    ...overrides,
+  }
+}
+
+describe('instruments CRUD (in-memory IDB)', () => {
+  it('saves and loads an instrument', async () => {
+    await saveInstrument(makeInstrument('a', { patch: { ...DEFAULT_PATCH, seed: 77 } }))
+    const loaded = await loadInstrument('a')
+    expect(loaded).not.toBeNull()
+    expect(loaded?.id).toBe('a')
+    expect(loaded?.patch.seed).toBe(77)
+  })
+
+  it('returns null for a missing instrument', async () => {
+    expect(await loadInstrument('nope')).toBeNull()
+  })
+
+  it('lists all saved instruments with correct ids', async () => {
+    await saveInstrument(makeInstrument('a'))
+    await saveInstrument(makeInstrument('b'))
+    const all = await listInstruments()
+    expect(all.map((i) => i.id).sort()).toEqual(['a', 'b'])
+  })
+
+  it('deletes an instrument', async () => {
+    await saveInstrument(makeInstrument('a'))
+    await deleteInstrument('a')
+    expect(await loadInstrument('a')).toBeNull()
+  })
+
+  it('renames an instrument and rejects renaming a missing one', async () => {
+    await saveInstrument(makeInstrument('a'))
+    await renameInstrument('a', '  Fresh Name  ')
+    expect((await loadInstrument('a'))?.name).toBe('Fresh Name')
+    await expect(renameInstrument('missing', 'x')).rejects.toThrow()
+  })
+
+  it('duplicates an instrument under a new id with caller timestamp', async () => {
+    await saveInstrument(makeInstrument('a', { name: 'Orig' }))
+    const dup = await duplicateInstrument('a', 'a-copy', 555)
+    expect(dup).not.toBeNull()
+    expect(dup?.id).toBe('a-copy')
+    expect(dup?.name).toBe('Orig copy')
+    expect(dup?.createdAt).toBe(555)
+    expect(dup?.updatedAt).toBe(555)
+    // Both exist independently.
+    expect(await loadInstrument('a')).not.toBeNull()
+    expect((await loadInstrument('a-copy'))?.name).toBe('Orig copy')
+  })
+
+  it('duplicate of a missing instrument returns null', async () => {
+    expect(await duplicateInstrument('ghost', 'g2', 1)).toBeNull()
+  })
+
+  it('sanitizes a tampered patch on read', async () => {
+    // Save directly through the mock with an out-of-range patch, then load.
+    const tampered = makeInstrument('t')
+    ;(tampered.patch as { polyphony: number }).polyphony = 9999
+    await saveInstrument(tampered)
+    const loaded = await loadInstrument('t')
+    expect(loaded?.patch.polyphony).toBeLessThanOrEqual(8)
+  })
+
+  it('rejects saving with an empty id', async () => {
+    await expect(saveInstrument(makeInstrument(''))).rejects.toThrow(/id/)
+  })
+})
+
+describe('graceful degradation', () => {
+  it('rejects with a clear error when IndexedDB is absent', async () => {
+    ;(globalThis as { indexedDB?: unknown }).indexedDB = undefined
+    await expect(loadInstrument('a')).rejects.toThrow(/IndexedDB is not available/)
+  })
+})

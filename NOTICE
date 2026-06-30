@@ -1,0 +1,86 @@
+mspectr
+Copyright (C) 2026 mspectr contributors
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version. See the LICENSE file for the full text.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+
+If you run a modified version of this software on a network server, the AGPL
+requires you to offer its complete corresponding source code to the users of
+that server.
+
+================================================================================
+Attribution — derived from the mpump suite
+================================================================================
+
+mspectr is part of the mpump suite of browser-native music instruments and
+reuses patterns, code, and conventions from its sibling projects. All siblings
+are licensed under AGPL-3.0; derived material remains under the same license.
+
+Sibling projects this work derives from:
+  - mpump    — the suite's foundational groovebox and shared conventions
+  - mgrains  — granular instrument (service-worker and PWA-shell patterns)
+  - mscope   — spectral/visualization tooling
+  - mdrone   — drone instrument (PWA manifest and icon conventions)
+  - mloop    — looping instrument
+  - mpumpit  — the GitHub Pages deploy workflow and AGPL LICENSE template
+
+Derived files and the sibling source they were adapted from:
+
+  Instrument & MIDI
+  - src/instrument/keyboard.ts         — Ableton-style QWERTY layout adapted
+                                         from mpumpit/src/midi/qwerty.ts
+                                         (drum mode removed; melodic only)
+  - src/midi/router.ts, parse.ts,
+    types.ts                           — router/parse/ownership model adapted
+                                         from mpumpit/src/midi/* (added pitch
+                                         bend, sustain, single-instrument route)
+
+  Sources
+  - src/sources/live.ts, tab.ts,
+    file.ts, capabilities.ts           — getUserMedia/getDisplayMedia constraints,
+                                         no-audio-track guard, decode/teardown
+                                         flow adapted from mscope/src/audio/input/*
+
+  Performance
+  - src/performance/macros.ts          — macro link/unlink takeover model adapted
+                                         from mgrains/src/audio/macros.ts
+  - src/performance/presets.ts         — preset structure + per-preset loudness
+                                         trim adapted from mdrone/src/engine/presets.ts
+
+  Persistence
+  - src/persistence/*                  — defensive IndexedDB + forward-sanitizing
+                                         deserialization adapted from
+                                         mgrains/src/storage/presets.ts
+
+  Recording & transport
+  - src/recording/wav.ts               — RIFF/PCM encoder adapted from
+                                         mloop/src/utils/wav.ts (24-bit added)
+  - src/recording/wavRecorder.ts,
+    recorder.worklet.ts                — recorder lifecycle adapted from
+                                         mloop/src/engine/Recorder.ts
+  - src/transport/linkBridge.ts        — Ableton Link bridge client adapted from
+                                         mdrone/src/engine/linkBridge.ts
+
+  PWA / build / deploy
+  - public/sw.js                       — adapted from mgrains/public/sw.js
+  - .github/workflows/deploy.yml       — adapted from the mpumpit/mgrains
+                                         GitHub Pages workflow
+  - .github/workflows/ci.yml           — adapted from the suite CI workflow
+  - public/manifest.webmanifest        — conventions from mdrone manifest
+  - LICENSE                            — AGPL-3.0 text from the mpumpit LICENSE
+
+  Original work (no sibling derivation)
+  - src/audio/dsp/* (FFT, windows, STFT, overlap-add, phase, spectral frame,
+    and all spectral operations: morph, shift, formant, blur, tilt, gate,
+    harmonize, freeze, reverb, limiter), src/audio/SpectralEngine.ts, the
+    spectral AudioWorklet, contracts, and the spectral visualization are
+    original to mspectr.
+
+Original upstream copyright for derived material:
+  Copyright (C) 2024-2026 gdamdam (https://github.com/gdamdam)

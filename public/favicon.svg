@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="mspectr">
+  <title>mspectr</title>
+  <!-- Spectral mark: a column of frequency bins forming a peaked spectral
+       envelope, tinted across the visible spectrum. Dark lab background. -->
+  <rect width="64" height="64" rx="14" fill="#0a0e14"/>
+  <defs>
+    <linearGradient id="spx" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2de2e6"/>
+      <stop offset="0.5" stop-color="#7b6cff"/>
+      <stop offset="1" stop-color="#ff5dc8"/>
+    </linearGradient>
+  </defs>
+  <g fill="url(#spx)">
+    <!-- bins: x, width=4, gap=2; heights trace a resonant peak envelope -->
+    <rect x="10" y="40" width="4" height="14" rx="2"/>
+    <rect x="16" y="32" width="4" height="22" rx="2"/>
+    <rect x="22" y="22" width="4" height="32" rx="2"/>
+    <rect x="28" y="12" width="4" height="42" rx="2"/>
+    <rect x="34" y="18" width="4" height="36" rx="2"/>
+    <rect x="40" y="28" width="4" height="26" rx="2"/>
+    <rect x="46" y="36" width="4" height="18" rx="2"/>
+  </g>
+  <!-- baseline: the analysis axis -->
+  <rect x="9" y="54" width="46" height="1.6" rx="0.8" fill="#2de2e6" opacity="0.45"/>
+</svg>

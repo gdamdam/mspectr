@@ -1,0 +1,704 @@
+/**
+ * SpectralEngine — the composition layer that turns the pure DSP primitives and
+ * the voice allocator into a playable spectral instrument. It is framework-free
+ * (no React, no DOM, no AudioWorklet API), so it runs unchanged inside the
+ * worklet and can be unit-tested in node.
+ *
+ * Per render block it:
+ *   1. feeds input to the STFT analyzer (live spectrum for display + capture),
+ *   2. produces instrument output one hop at a time into an output FIFO that
+ *      decouples the worklet's 128-sample render quanta from the STFT hop.
+ *
+ * Per synthesized hop it:
+ *   1. builds a shared processed base spectrum: morph(A,B) → tilt → blur → gate,
+ *   2. for each active voice resamples that base to the note pitch, shifts the
+ *      formant envelope, applies the inharmonic SHIFT, harmonizes, then
+ *      overlap-adds with phase advanced per bin (locked or seeded-animated),
+ *   3. sums voices with per-sample envelope ramps and equal-power panning,
+ *   4. runs the SPACE reverb and the stereo-linked limiter.
+ *
+ * Pitch model: a captured spectrum is a timbre. Playing REF_NOTE reproduces it
+ * as captured; other notes resample the magnitude axis. SHIFT (additive) and
+ * FORMANT (envelope) are deliberately different operations from this.
+ */
+import {
+  type CaptureMode,
+  type QualityMode,
+  type SnapshotSlot,
+  type SpectralParams,
+  type SpectralSnapshot,
+  DEFAULT_PARAMS,
+  INTERVAL_SETS,
+  LIVE_BUFFER_SECONDS,
+  MIN_POLYPHONY,
+  SNAPSHOT_SCHEMA_VERSION,
+  clamp,
+  qualityConfig,
+} from './contracts'
+import { FrameAverager, captureFrame } from './dsp/freeze'
+import { FFT } from './dsp/fft'
+import { applyBlur } from './dsp/blur'
+import { applyFormant } from './dsp/formant'
+import { applyFreqShift, resampleSpectrum, shiftBinsFor } from './dsp/shift'
+import { applyHarmonize } from './dsp/harmonize'
+import { applyTilt } from './dsp/tilt'
+import { morphMagnitude } from './dsp/morph'
+import { SpectralGate } from './dsp/gate'
+import { OverlapAdd } from './dsp/overlapAdd'
+import { StereoReverb } from './dsp/reverb'
+import { StereoLimiter } from './dsp/limiter'
+import { StftAnalyzer } from './dsp/stft'
+import { baseBinOmega, makePhaseDrift, wrapPhase } from './dsp/phase'
+import { estimateFundamental } from './dsp/spectralFrame'
+import { VoiceAllocator } from '../instrument/voiceAllocator'
+
+/** Note whose pitch reproduces a captured spectrum unchanged. */
+const REF_NOTE = 60
+const VOICE_GAIN = 0.22
+/** Frames accumulated for the 'average' capture mode. */
+const AVERAGE_FRAMES = 8
+
+interface Slot {
+  mag: Float32Array
+  phase: Float32Array
+  filled: boolean
+  baseFrequency: number
+  sourceLabel: string
+  isLiveDerived: boolean
+}
+
+class Voice {
+  active = false
+  note = 0
+  velocity = 0
+  state: 'idle' | 'attack' | 'decay' | 'sustain' | 'release' = 'idle'
+  env = 0
+  prevEnv = 0
+  ola: OverlapAdd
+  phaseAcc: Float32Array
+  drift: (amount: number) => number
+
+  constructor(fft: FFT, hop: number, binCount: number, seed: number) {
+    this.ola = new OverlapAdd(fft, hop)
+    this.phaseAcc = new Float32Array(binCount)
+    this.drift = makePhaseDrift(seed)
+  }
+
+  reset(): void {
+    this.active = false
+    this.state = 'idle'
+    this.env = 0
+    this.prevEnv = 0
+    this.ola.reset()
+    this.phaseAcc.fill(0)
+  }
+}
+
+export type SnapshotCapturedCallback = (slot: SnapshotSlot, snapshot: SpectralSnapshot) => void
+
+export class SpectralEngine {
+  readonly sampleRate: number
+  private quality: QualityMode
+  private fftSize: number
+  private hop: number
+  private binCount: number
+  private maxVoices: number
+  private polyphony: number
+  private seed: number
+
+  private fft!: FFT
+  private analyzer!: StftAnalyzer
+  private omega!: Float32Array
+  private gate!: SpectralGate
+  private voices!: Voice[]
+  private allocator!: VoiceAllocator
+
+  // Live frame + snapshots.
+  private liveMag!: Float32Array
+  private livePhase!: Float32Array
+  private frozenLive = false
+  private slotA!: Slot
+  private slotB!: Slot
+
+  // Scratch (binCount).
+  private s1!: Float32Array
+  private s2!: Float32Array
+  private bufA!: Float32Array
+  private bufB!: Float32Array
+  private fmEnv!: Float32Array
+  private fmShifted!: Float32Array
+  private harmScratch!: Float32Array
+
+  // Output FIFO (stereo).
+  private fifoL!: Float32Array
+  private fifoR!: Float32Array
+  private fifoSize = 0
+  private fifoRead = 0
+  private fifoWrite = 0
+  private fifoCount = 0
+  private hopL!: Float32Array
+  private hopR!: Float32Array
+  private mono!: Float32Array
+
+  private reverb: StereoReverb
+  private limiter: StereoLimiter
+
+  private params: SpectralParams = { ...DEFAULT_PARAMS }
+  // Smoothed continuous params that must not click.
+  private smTranspose = 0
+  private smOutGain = 1
+  private bendSemitones = 0
+
+  // Capture state.
+  private captureSlot: SnapshotSlot | null = null
+  private captureMode: CaptureMode = 'frame'
+  private averager!: FrameAverager
+  private averaging = false
+  private onCaptured: SnapshotCapturedCallback | null = null
+
+  /** Dedicated voice that sounds a snapshot endpoint at the reference pitch. */
+  private auditionVoice!: Voice
+  /** Slot the audition voice renders; held through its release fade. */
+  private auditionRenderSlot: SnapshotSlot = 'A'
+  private peak = 0
+
+  constructor(sampleRate: number, quality: QualityMode = 'normal') {
+    this.sampleRate = sampleRate
+    this.quality = quality
+    const cfg = qualityConfig(quality)
+    this.fftSize = cfg.fftSize
+    this.hop = cfg.hopSize
+    this.maxVoices = cfg.maxVoices
+    this.binCount = (cfg.fftSize >> 1) + 1
+    this.polyphony = Math.min(6, cfg.maxVoices)
+    this.seed = 0x1234
+    this.reverb = new StereoReverb(sampleRate)
+    this.limiter = new StereoLimiter(sampleRate)
+    this.build()
+  }
+
+  setOnCaptured(cb: SnapshotCapturedCallback): void {
+    this.onCaptured = cb
+  }
+
+  private build(): void {
+    const { fftSize, hop, binCount } = this
+    this.fft = new FFT(fftSize)
+    this.analyzer = new StftAnalyzer(fftSize, hop)
+    this.omega = baseBinOmega(binCount, fftSize, hop)
+    this.gate = new SpectralGate(binCount)
+    this.allocator = new VoiceAllocator(this.polyphony)
+    this.voices = []
+    for (let i = 0; i < this.maxVoices; i++) {
+      this.voices.push(new Voice(this.fft, hop, binCount, (this.seed ^ (i * 0x9e3779b1)) >>> 0))
+    }
+    this.auditionVoice = new Voice(this.fft, hop, binCount, (this.seed ^ 0xa5a5a5a5) >>> 0)
+    this.liveMag = new Float32Array(binCount)
+    this.livePhase = new Float32Array(binCount)
+    this.slotA = this.makeSlot(binCount)
+    this.slotB = this.makeSlot(binCount)
+    this.s1 = new Float32Array(binCount)
+    this.s2 = new Float32Array(binCount)
+    this.bufA = new Float32Array(binCount)
+    this.bufB = new Float32Array(binCount)
+    this.fmEnv = new Float32Array(binCount)
+    this.fmShifted = new Float32Array(binCount)
+    this.harmScratch = new Float32Array(binCount)
+    this.fifoSize = fftSize * 2
+    this.fifoL = new Float32Array(this.fifoSize)
+    this.fifoR = new Float32Array(this.fifoSize)
+    this.fifoRead = 0
+    this.fifoWrite = 0
+    this.fifoCount = 0
+    this.hopL = new Float32Array(hop)
+    this.hopR = new Float32Array(hop)
+    this.mono = new Float32Array(hop)
+    this.averager = new FrameAverager(binCount)
+  }
+
+  private makeSlot(binCount: number): Slot {
+    return {
+      mag: new Float32Array(binCount),
+      phase: new Float32Array(binCount),
+      filled: false,
+      baseFrequency: 0,
+      sourceLabel: '',
+      isLiveDerived: false,
+    }
+  }
+
+  // --- Parameter / control surface ---------------------------------------
+
+  setParams(params: SpectralParams): void {
+    this.params = params
+  }
+
+  setPolyphony(value: number): void {
+    this.polyphony = Math.round(clamp(value, MIN_POLYPHONY, this.maxVoices))
+    const toRelease = this.allocator.setMaxVoices(this.polyphony)
+    for (const idx of toRelease) this.releaseVoiceImmediate(idx)
+  }
+
+  setSeed(seed: number): void {
+    this.seed = seed >>> 0
+    for (let i = 0; i < this.voices.length; i++) {
+      this.voices[i].drift = makePhaseDrift((this.seed ^ (i * 0x9e3779b1)) >>> 0)
+    }
+  }
+
+  setQuality(quality: QualityMode): void {
+    if (quality === this.quality) return
+    this.quality = quality
+    const cfg = qualityConfig(quality)
+    this.panic()
+    this.fftSize = cfg.fftSize
+    this.hop = cfg.hopSize
+    this.maxVoices = cfg.maxVoices
+    this.binCount = (cfg.fftSize >> 1) + 1
+    this.polyphony = Math.min(this.polyphony, cfg.maxVoices)
+    this.build()
+  }
+
+  // --- Notes -------------------------------------------------------------
+
+  noteOn(note: number, velocity: number): void {
+    if (!Number.isFinite(note)) return
+    const n = clamp(Math.round(note), 0, 127)
+    const alloc = this.allocator.noteOn(n, clamp(Math.round(velocity), 1, 127))
+    const v = this.voices[alloc.voiceIndex]
+    if (!v) return
+    v.active = true
+    v.note = n
+    v.velocity = clamp(Math.round(velocity), 1, 127)
+    v.state = 'attack'
+    if (!alloc.stolen) {
+      v.env = 0
+      v.prevEnv = 0
+      v.phaseAcc.fill(0)
+      v.ola.reset()
+    }
+  }
+
+  noteOff(note: number): void {
+    const indices = this.allocator.noteOff(clamp(Math.round(note), 0, 127))
+    for (const idx of indices) {
+      const v = this.voices[idx]
+      if (v && v.active) v.state = 'release'
+    }
+  }
+
+  sustain(on: boolean): void {
+    const released = this.allocator.setSustain(on)
+    for (const idx of released) {
+      const v = this.voices[idx]
+      if (v && v.active) v.state = 'release'
+    }
+  }
+
+  pitchBend(semitones: number): void {
+    this.bendSemitones = Number.isFinite(semitones) ? clamp(semitones, -48, 48) : 0
+  }
+
+  panic(): void {
+    const indices = this.allocator.panic()
+    for (const idx of indices) {
+      const v = this.voices[idx]
+      if (v) v.reset()
+    }
+    // Also hard-stop any voice the allocator no longer tracks.
+    for (const v of this.voices) v.reset()
+    this.auditionVoice.reset()
+  }
+
+  private releaseVoiceImmediate(idx: number): void {
+    const v = this.voices[idx]
+    if (v && v.active) v.state = 'release'
+  }
+
+  // --- Snapshots ---------------------------------------------------------
+
+  capture(slot: SnapshotSlot, mode: CaptureMode, sourceLabel = '', isLiveDerived = false, capturedAt = 0): void {
+    this.captureSlot = slot
+    this.captureMode = mode
+    this.pendingLabel = sourceLabel
+    this.pendingLive = isLiveDerived
+    this.pendingAt = capturedAt
+    if (mode === 'average') {
+      this.averager.reset()
+      this.averaging = true
+    }
+  }
+
+  private pendingLabel = ''
+  private pendingLive = false
+  private pendingAt = 0
+
+  loadSnapshot(slot: SnapshotSlot, snap: SpectralSnapshot): void {
+    const target = slot === 'A' ? this.slotA : this.slotB
+    // Resample stored data to the current binCount if quality differs.
+    if (snap.binCount === this.binCount) {
+      target.mag.set(snap.magnitude.subarray(0, this.binCount))
+      if (snap.phase) target.phase.set(snap.phase.subarray(0, this.binCount))
+      else target.phase.fill(0)
+    } else {
+      const ratio = (snap.binCount - 1) / (this.binCount - 1)
+      for (let k = 0; k < this.binCount; k++) {
+        const src = k * ratio
+        const i = Math.min(snap.binCount - 1, Math.floor(src))
+        target.mag[k] = snap.magnitude[i] ?? 0
+        target.phase[k] = snap.phase ? (snap.phase[i] ?? 0) : 0
+      }
+    }
+    target.filled = true
+    target.baseFrequency = snap.baseFrequency
+    target.sourceLabel = snap.sourceLabel
+    target.isLiveDerived = snap.isLiveDerived
+  }
+
+  clearSnapshot(slot: SnapshotSlot): void {
+    const t = slot === 'A' ? this.slotA : this.slotB
+    t.filled = false
+    t.mag.fill(0)
+    t.phase.fill(0)
+  }
+
+  swapSnapshots(): void {
+    const tmp = this.slotA
+    this.slotA = this.slotB
+    this.slotB = tmp
+  }
+
+  copySnapshot(from: SnapshotSlot, to: SnapshotSlot): void {
+    const src = from === 'A' ? this.slotA : this.slotB
+    const dst = to === 'A' ? this.slotA : this.slotB
+    if (src === dst) return
+    dst.mag.set(src.mag)
+    dst.phase.set(src.phase)
+    dst.filled = src.filled
+    dst.baseFrequency = src.baseFrequency
+    dst.sourceLabel = src.sourceLabel
+    dst.isLiveDerived = src.isLiveDerived
+  }
+
+  freezeLive(on: boolean): void {
+    this.frozenLive = on
+  }
+
+  clearLive(): void {
+    this.liveMag.fill(0)
+    this.livePhase.fill(0)
+    this.analyzer.reset()
+  }
+
+  setMonitor(_on: boolean): void {
+    /* monitoring is a main-thread gain node; the engine ignores it. */
+  }
+
+  audition(slot: SnapshotSlot | null): void {
+    const v = this.auditionVoice
+    if (slot) {
+      this.auditionRenderSlot = slot
+      if (!v.active) {
+        v.env = 0
+        v.prevEnv = 0
+        v.phaseAcc.fill(0)
+        v.ola.reset()
+      }
+      v.active = true
+      v.note = REF_NOTE
+      v.velocity = 100
+      v.state = 'attack'
+    } else if (v.active) {
+      v.state = 'release'
+    }
+  }
+
+  // --- Render ------------------------------------------------------------
+
+  /** Process one render block. `input` is mono; `outL`/`outR` are written. */
+  render(input: Float32Array, outL: Float32Array, outR: Float32Array): void {
+    // 1. Analysis on the incoming source.
+    const frames = this.analyzer.process(input)
+    if (frames > 0) {
+      if (!this.frozenLive) {
+        this.liveMag.set(this.analyzer.magnitude)
+        this.livePhase.set(this.analyzer.phase)
+      }
+      this.handleCapture()
+    }
+
+    // 2. Fill the output FIFO with instrument hops as needed, then drain.
+    const n = outL.length
+    while (this.fifoCount < n) this.synthHop()
+    for (let i = 0; i < n; i++) {
+      outL[i] = this.fifoL[this.fifoRead]
+      outR[i] = this.fifoR[this.fifoRead]
+      this.fifoRead = (this.fifoRead + 1) % this.fifoSize
+      this.fifoCount--
+    }
+  }
+
+  private handleCapture(): void {
+    if (this.captureSlot === null) return
+    if (this.captureMode === 'average' && this.averaging) {
+      this.averager.add(this.analyzer.magnitude, this.analyzer.phase)
+      if (this.averager.frames < AVERAGE_FRAMES) return
+      const slot = this.captureSlot === 'A' ? this.slotA : this.slotB
+      this.averager.finish(slot.mag, slot.phase)
+      this.averaging = false
+      this.finalizeCapture(slot)
+    } else {
+      const slot = this.captureSlot === 'A' ? this.slotA : this.slotB
+      captureFrame(this.analyzer.magnitude, this.analyzer.phase, slot.mag, slot.phase)
+      this.finalizeCapture(slot)
+    }
+  }
+
+  private finalizeCapture(slot: Slot): void {
+    slot.filled = true
+    slot.baseFrequency = estimateFundamental(slot.mag, this.sampleRate, this.fftSize)
+    slot.sourceLabel = this.pendingLabel
+    slot.isLiveDerived = this.pendingLive
+    const which = this.captureSlot as SnapshotSlot
+    this.captureSlot = null
+    if (this.onCaptured) {
+      this.onCaptured(which, this.snapshotOf(slot, this.pendingAt))
+    }
+  }
+
+  private snapshotOf(slot: Slot, capturedAt: number): SpectralSnapshot {
+    return {
+      schemaVersion: SNAPSHOT_SCHEMA_VERSION,
+      fftSize: this.fftSize,
+      binCount: this.binCount,
+      analysisSampleRate: this.sampleRate,
+      baseFrequency: slot.baseFrequency,
+      magnitude: slot.mag.slice(),
+      phase: slot.phase.slice(),
+      sourceLabel: slot.sourceLabel,
+      capturedAt,
+      isLiveDerived: slot.isLiveDerived,
+    }
+  }
+
+  /** Synthesize one hop of stereo instrument output into the FIFO. */
+  private synthHop(): void {
+    const { hop, hopL, hopR } = this
+    const p = this.params
+
+    // Smooth the parameters that must not click.
+    const sc = 0.25
+    this.smTranspose += sc * (p.transpose - this.smTranspose)
+    const targetOut = Math.pow(10, p.outputGainDb / 20)
+    this.smOutGain += sc * (targetOut - this.smOutGain)
+
+    // Effective endpoints: a filled snapshot, else the (possibly frozen) live frame.
+    const effA = this.slotA.filled ? this.slotA.mag : this.liveMag
+    const effB = this.slotB.filled ? this.slotB.mag : this.liveMag
+
+    // Shared processed base spectrum for played voices: morph → tilt → blur → gate.
+    morphMagnitude(effA, effB, clamp(p.morph, 0, 1), this.s1)
+    applyTilt(this.s1, p.tilt, this.s2, this.sampleRate, this.fftSize)
+    applyBlur(this.s2, p.blur, this.s1)
+    this.gate.process(this.s1, p.gate, this.s2) // s2 = shared processed base
+
+    hopL.fill(0)
+    hopR.fill(0)
+
+    const hopSeconds = hop / this.sampleRate
+    const intervals = INTERVAL_SETS[p.harmonyInterval] ?? INTERVAL_SETS.octaves
+    const shiftBins = shiftBinsFor(p.shift, this.sampleRate, this.fftSize)
+    const animate = p.freezePhase === 'animate'
+    const motion = p.phaseMotion
+    let activePeak = 0
+
+    // Played notes render from the morphed base spectrum.
+    for (const v of this.voices) {
+      if (v.active) this.synthVoiceInto(v, this.s2, intervals, shiftBins, animate, motion, hopSeconds)
+    }
+    // Audition sounds a captured snapshot endpoint directly at the reference pitch.
+    if (this.auditionVoice.active) {
+      const slotMag = this.auditionRenderSlot === 'A' ? this.slotA.mag : this.slotB.mag
+      this.synthVoiceInto(this.auditionVoice, slotMag, intervals, shiftBins, animate, motion, hopSeconds)
+    }
+
+    // SPACE stage.
+    this.reverb.amount = p.reverbAmount
+    this.reverb.early = p.earlyReflections
+    this.reverb.diffusion = p.diffusion
+    this.reverb.width = p.stereoWidth
+    this.reverb.process(hopL, hopR)
+
+    // Output gain + peak + limiter.
+    for (let i = 0; i < hop; i++) {
+      hopL[i] *= this.smOutGain
+      hopR[i] *= this.smOutGain
+      const a = Math.abs(hopL[i])
+      const b = Math.abs(hopR[i])
+      if (a > activePeak) activePeak = a
+      if (b > activePeak) activePeak = b
+    }
+    this.peak = activePeak
+    this.limiter.process(hopL, hopR)
+
+    // Push into the FIFO.
+    for (let i = 0; i < hop; i++) {
+      this.fifoL[this.fifoWrite] = hopL[i]
+      this.fifoR[this.fifoWrite] = hopR[i]
+      this.fifoWrite = (this.fifoWrite + 1) % this.fifoSize
+    }
+    this.fifoCount += hop
+  }
+
+  /** Advance a voice's envelope and overlap-add its spectral chain into the hop. */
+  private synthVoiceInto(
+    v: Voice,
+    baseMag: Float32Array,
+    intervals: readonly number[],
+    shiftBins: number,
+    animate: boolean,
+    motion: number,
+    hopSeconds: number,
+  ): void {
+    this.advanceEnvelope(v, hopSeconds)
+    if (!v.active) return
+    const p = this.params
+    const binCount = this.binCount
+    const hop = this.hop
+    const ratio = Math.pow(2, (v.note - REF_NOTE + this.smTranspose + this.bendSemitones) / 12)
+    resampleSpectrum(baseMag, ratio, this.bufA)
+    applyFormant(this.bufA, p.formant, this.bufB, this.fmEnv, this.fmShifted)
+    applyFreqShift(this.bufB, shiftBins, this.bufA)
+    applyHarmonize(this.bufA, p.harmonyVoices, intervals, p.harmonyMix, this.bufB, this.harmScratch)
+
+    const velGain = VOICE_GAIN * (0.25 + 0.75 * (v.velocity / 127))
+    for (let k = 0; k < binCount; k++) this.bufB[k] *= velGain
+
+    const phase = v.phaseAcc
+    const omega = this.omega
+    for (let k = 0; k < binCount; k++) {
+      let ph = phase[k] + omega[k]
+      if (animate && motion > 0) ph += v.drift(motion * 0.6)
+      phase[k] = wrapPhase(ph)
+    }
+    v.ola.process(this.bufB, phase, this.mono)
+    const mono = this.mono
+    const pan = clamp((v.note - REF_NOTE) / 36, -1, 1) * 0.35
+    const lg = Math.cos((pan + 1) * (Math.PI / 4))
+    const rg = Math.sin((pan + 1) * (Math.PI / 4))
+    const e0 = v.prevEnv
+    const de = (v.env - e0) / hop
+    for (let i = 0; i < hop; i++) {
+      const e = e0 + de * i
+      const s = mono[i] * e
+      this.hopL[i] += s * lg
+      this.hopR[i] += s * rg
+    }
+    v.prevEnv = v.env
+  }
+
+  private advanceEnvelope(v: Voice, dt: number): void {
+    const p = this.params
+    switch (v.state) {
+      case 'attack': {
+        const a = Math.max(0.001, p.attack)
+        v.env += dt / a
+        if (v.env >= 1) {
+          v.env = 1
+          v.state = 'decay'
+        }
+        break
+      }
+      case 'decay': {
+        const d = Math.max(0.001, p.decay)
+        v.env -= ((1 - p.sustain) * dt) / d
+        if (v.env <= p.sustain) {
+          v.env = p.sustain
+          v.state = 'sustain'
+        }
+        break
+      }
+      case 'sustain':
+        v.env = p.sustain
+        break
+      case 'release': {
+        const r = Math.max(0.001, p.release)
+        v.env -= dt / r
+        if (v.env <= 0.0002) {
+          v.env = 0
+          v.active = false
+          v.state = 'idle'
+          v.ola.reset()
+        }
+        break
+      }
+      default:
+        break
+    }
+  }
+
+  // --- Telemetry helpers (called by the worklet at display rate) ---------
+
+  get instrumentPeak(): number {
+    return this.peak
+  }
+
+  get limiterGainReductionDb(): number {
+    return this.limiter.gainReductionDb
+  }
+
+  activeVoices(): number {
+    let c = 0
+    for (const v of this.voices) if (v.active) c++
+    return c
+  }
+
+  isFrozenLive(): boolean {
+    return this.frozenLive
+  }
+
+  liveBufferSeconds(): number {
+    return LIVE_BUFFER_SECONDS
+  }
+
+  snapshotFilled(slot: SnapshotSlot): boolean {
+    return (slot === 'A' ? this.slotA : this.slotB).filled
+  }
+
+  /** Downsample a source magnitude spectrum to `dst` (dB), log-frequency. */
+  fillDisplaySpectrum(dst: Float32Array, source: 'live' | 'morph'): void {
+    let mag: Float32Array
+    if (source === 'morph' && (this.slotA.filled || this.slotB.filled)) {
+      const effA = this.slotA.filled ? this.slotA.mag : this.liveMag
+      const effB = this.slotB.filled ? this.slotB.mag : this.liveMag
+      morphMagnitude(effA, effB, clamp(this.params.morph, 0, 1), this.s1)
+      mag = this.s1
+    } else {
+      mag = this.liveMag
+    }
+    const bins = dst.length
+    const maxBin = this.binCount - 1
+    for (let i = 0; i < bins; i++) {
+      // Log-frequency band [loFrac, hiFrac] of the spectrum.
+      const lo = Math.pow(maxBin, i / bins)
+      const hi = Math.pow(maxBin, (i + 1) / bins)
+      const a = Math.max(0, Math.floor(lo))
+      const b = Math.min(maxBin, Math.max(a, Math.ceil(hi)))
+      let m = 0
+      for (let k = a; k <= b; k++) if (mag[k] > m) m = mag[k]
+      // Normalize against fftSize (forward FFT is unnormalized) and convert to dB.
+      const norm = m / (this.fftSize * 0.5)
+      dst[i] = norm > 1e-6 ? Math.max(-100, 20 * Math.log10(norm)) : -100
+    }
+  }
+
+  reset(): void {
+    this.panic()
+    this.clearLive()
+    this.reverb.reset()
+    this.limiter.reset()
+    this.fifoRead = this.fifoWrite = this.fifoCount = 0
+    this.fifoL.fill(0)
+    this.fifoR.fill(0)
+  }
+}

@@ -1,0 +1,1431 @@
+/* ===========================================================================
+   mspectr — a browser-native spectral resynthesis instrument.
+
+   ART DIRECTION · "Emission Lines"
+   A graphite darkroom bench. The housing is matte, deep, and almost colourless
+   — the kind of blue-black you see when a spectrometer is the only lit thing in
+   the room. The ONLY colour anywhere is borrowed from real spectral emission
+   lines: H-gamma violet (434nm), H-beta cyan (486nm), Hg green (546nm),
+   Na-D amber (589nm), H-alpha red (656nm). Those five hues do all the work.
+
+   TYPOGRAPHY is the personality. Two authored laboratory voices:
+   --font-display  Big Shoulders Display — a condensed, milled industrial face.
+                   It is the lettering engraved into the equipment faceplate:
+                   the MSPECTR nameplate and display headings. Used loud, tight,
+                   and sparingly.
+   --font-data     Martian Mono — a grid-built technical monospace. Every
+                   calibrated readout, silkscreen label, axis, and number lives
+                   here, tracked wide like a screen-printed legend.
+
+   Boldness is spent in ONE place: the spectral material itself — the morph
+   track (banded emission spectrum + engraved Fraunhofer ticks + a milled
+   slider thumb) and the spectrometer faceplate around the display. Everything
+   else stays quiet, matte, and disciplined.
+   =========================================================================== */
+
+:root {
+  color-scheme: dark;
+
+  /* Graphite darkroom bench — matte, deep, nearly colourless blue-black. */
+  --ink: #07090e;
+  --panel: #0e1118;
+  --panel-2: #11151e;
+  --raised: #171c27;
+  --line: #20262f;
+  --line-bright: #2d3540;
+
+  /* High-contrast legend on a dark plate. Body text clears WCAG AA on --panel. */
+  --text: #eef1f5;
+  --muted: #98a1b0;
+  --faint: #69727f;
+
+  /* The whole palette: real spectral emission lines, saturated as if glowing
+     on a photographic plate. (Wavelengths in nm.) */
+  --violet: #9d7bff;   /* 434  H-gamma  */
+  --cyan: #46d4f0;     /* 486  H-beta   */
+  --green: #5fe488;    /* 546  Hg       */
+  --amber: #ffc24b;    /* 589  Na-D     */
+  --magenta: #ff5a6a;  /* 656  H-alpha  */
+  --danger: #ff5a6a;   /* the H-alpha line doubles as the alarm colour */
+
+  /* Glow tints, derived from the lines so nothing drifts off-palette. */
+  --cyan-glow: rgba(70, 212, 240, 0.5);
+  --violet-glow: rgba(157, 123, 255, 0.5);
+  --magenta-glow: rgba(255, 90, 106, 0.45);
+
+  /* Smooth ramp for small accents (the brand dot, fills). */
+  --spectrum: linear-gradient(90deg, var(--violet), var(--cyan), var(--green), var(--amber), var(--magenta));
+  /* Discrete calibrated bands for the spectral material — emission lines, not a
+     smear. Spaced by their true relative position across the visible band. */
+  --spectrum-bands: linear-gradient(
+    90deg,
+    var(--violet) 0 18%, var(--cyan) 18% 40%, var(--green) 40% 60%,
+    var(--amber) 60% 82%, var(--magenta) 82% 100%
+  );
+  /* Fraunhofer absorption lines overlaid as fine dark gaps — the engraved
+     calibration scale read across the spectrum. */
+  --fraunhofer: repeating-linear-gradient(90deg, transparent 0 9.3%, rgba(4, 6, 10, 0.72) 9.3% 10%);
+  --focus: var(--cyan);
+
+  --radius: 8px;
+  --radius-sm: 6px;
+  --tap: 44px;
+
+  --font-display: 'Big Shoulders Display', 'Arial Narrow', system-ui, sans-serif;
+  --font-ui: 'Martian Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-data: 'Martian Mono', ui-monospace, 'SF Mono', 'Roboto Mono', Menlo, monospace;
+
+  /* Type scale — a deliberate calibrated ramp, not ad-hoc rem values. */
+  --step--1: 0.7rem;
+  --step-0: 0.82rem;
+  --step-1: 0.95rem;
+  --step-2: 1.15rem;
+  --step-3: 1.6rem;
+
+  /* Silkscreen-label tracking presets (Martian Mono is wide by design, so the
+     extra tracking is restrained). */
+  --track-label: 0.16em;
+  --track-tight: 0.04em;
+
+  --eyebrow: 0.66rem;
+  --t-fast: 120ms;
+  --t-med: 220ms;
+}
+
+/* Reduced-intensity preference: pull the emission lines back toward graphite
+   so the only-colour-is-spectral concept survives but stops glowing. */
+:root[data-reduced-intensity='true'] {
+  --violet: #8a82ac;
+  --cyan: #74a8ba;
+  --green: #7eac84;
+  --amber: #bba573;
+  --magenta: #b4838b;
+  --cyan-glow: rgba(116, 168, 186, 0.28);
+  --violet-glow: rgba(138, 130, 172, 0.28);
+  --magenta-glow: rgba(180, 131, 139, 0.26);
+  --spectrum: linear-gradient(90deg, #5a5570, #4a5566, #556a5a, #6a6350, #6a4f56);
+  --spectrum-bands: var(--spectrum);
+  --fraunhofer: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  /* The bench: a matte graphite field with one cold optical highlight low and
+     centre, as if a single lamp lit the spectrometer from below. */
+  background:
+    radial-gradient(140% 110% at 50% 8%, #0a0d14 0%, var(--ink) 62%),
+    var(--ink);
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: var(--font-ui);
+  /* Martian Mono runs a touch large per em; 14px lands it at a comfortable
+     reading size while keeping numbers tabular. */
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* Display headings ride the engraved nameplate voice. */
+h1,
+h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.05;
+}
+
+/* --- Universal focus ring: always visible, never removed ----------------- */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: 8px;
+  top: -48px;
+  z-index: 50;
+  padding: 10px 14px;
+  background: var(--raised);
+  color: var(--text);
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  transition: top var(--t-fast) ease;
+}
+.skip-link:focus {
+  top: 8px;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* --- Silkscreen faceplate label ------------------------------------------ */
+/* Screen-printed legend: wide-tracked mono with a short emission-line tick
+   struck before it, like a label engraved beside an indicator on hardware. */
+.panel__eyebrow {
+  font-family: var(--font-data);
+  font-size: var(--eyebrow);
+  font-weight: 600;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.panel__eyebrow::before {
+  content: '';
+  width: 14px;
+  height: 2px;
+  background: var(--cyan);
+  box-shadow: 0 0 6px var(--cyan-glow);
+  flex: none;
+}
+
+/* =========================================================================
+   Layout
+   ========================================================================= */
+.app {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px clamp(14px, 3vw, 28px) 28px;
+  max-width: 1500px;
+  margin: 0 auto;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.topbar__brand {
+  display: flex;
+  align-items: baseline;
+  gap: 13px;
+}
+/* The brand mark reads as a slit aperture: the full spectrum dispersed through
+   a thin vertical line, the way light enters a spectrometer. */
+.topbar__mark {
+  width: 5px;
+  height: 22px;
+  border-radius: 1px;
+  background: var(--spectrum);
+  align-self: center;
+  box-shadow: 0 0 14px var(--violet-glow), 0 0 22px var(--magenta-glow);
+}
+/* The MSPECTR nameplate — engraved into the faceplate. Big Shoulders at full
+   weight, uppercased and tightly set so it reads as milled signage, with a
+   faint emission glow as if the lettering is backlit. */
+.topbar__name {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: var(--step-3);
+  line-height: 1;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text);
+  text-shadow: 0 0 18px rgba(70, 212, 240, 0.12);
+}
+.topbar__tag {
+  font-family: var(--font-data);
+  color: var(--faint);
+  font-size: var(--step--1);
+  letter-spacing: 0.05em;
+}
+/* Etched calibration stamp riding the nameplate, like a serial number struck
+   beside the model name on lab hardware. */
+.topbar__version {
+  font-family: var(--font-data);
+  font-size: 0.5rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  vertical-align: super;
+  margin-left: 5px;
+  padding: 1px 4px;
+  border: 1px solid color-mix(in srgb, var(--cyan) 35%, transparent);
+  border-radius: 3px;
+  opacity: 0.9;
+}
+.topbar__nav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+.stage__display {
+  min-height: 340px;
+  display: flex;
+}
+.stage__rack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.strip {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* =========================================================================
+   Panels
+   ========================================================================= */
+/* Panels are bolted faceplates: matte housing, a single hairline catch of
+   light along the top edge, and a quiet inset so they sit on the bench. */
+.panel {
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 40%),
+    var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 15px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+/* =========================================================================
+   Spectral display (the hero / prism)
+   ========================================================================= */
+/* The spectrometer faceplate: a recessed observation window milled into the
+   bench. A double border (housing + inner bezel) and a cold optical wash from
+   below sell the "looking into the instrument" read. */
+.spectral-display {
+  position: relative;
+  flex: 1;
+  min-height: 340px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-bright);
+  background:
+    radial-gradient(120% 90% at 50% 112%, rgba(70, 212, 240, 0.07), transparent 58%),
+    linear-gradient(180deg, #0a0e16, #070a10);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.5),
+    inset 0 2px 22px rgba(0, 0, 0, 0.65);
+  overflow: hidden;
+}
+.spectral-display[data-active='false']::after {
+  content: 'Start audio — disperse the signal into its lines';
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--faint);
+  font-family: var(--font-data);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  font-size: var(--step--1);
+}
+.spectral-display__canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.spectral-display__surface {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  touch-action: none;
+}
+.spectral-display__reticle {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  margin: -9px;
+  border: 1.5px solid rgba(238, 241, 245, 0.85);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--cyan-glow);
+  pointer-events: none;
+}
+.spectral-display__reticle::before,
+.spectral-display__reticle::after {
+  content: '';
+  position: absolute;
+  background: rgba(230, 237, 243, 0.55);
+}
+.spectral-display__reticle::before {
+  left: 50%;
+  top: -10px;
+  width: 1px;
+  height: 8px;
+}
+.spectral-display__reticle::after {
+  top: 50%;
+  left: -10px;
+  height: 1px;
+  width: 8px;
+}
+.spectral-display__axis {
+  position: absolute;
+  font-family: var(--font-data);
+  font-size: 0.58rem;
+  font-weight: 500;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--faint);
+  pointer-events: none;
+}
+.spectral-display__axis--x {
+  bottom: 8px;
+  right: 12px;
+}
+.spectral-display__axis--y {
+  top: 12px;
+  left: 10px;
+  writing-mode: vertical-rl;
+}
+
+/* =========================================================================
+   Buttons / chips / inputs
+   ========================================================================= */
+/* Controls wear the silkscreen voice: mono, tracked, uppercased — the legend
+   printed onto a hardware switch. */
+.button,
+.chip,
+.icon-button {
+  font-family: var(--font-data);
+  color: var(--text);
+  background: var(--raised);
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--t-fast) ease, border-color var(--t-fast) ease, transform var(--t-fast) ease, box-shadow var(--t-fast) ease;
+}
+.button {
+  min-height: var(--tap);
+  padding: 0 16px;
+  font-size: var(--step-0);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.chip {
+  min-height: 36px;
+  padding: 0 13px;
+  font-size: var(--step--1);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Honour the 44px touch target on coarse pointers without bloating mouse UI. */
+@media (pointer: coarse) {
+  .chip {
+    min-height: var(--tap);
+  }
+}
+.button:hover,
+.chip:hover,
+.icon-button:hover {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cyan) 25%, transparent);
+}
+.button:active,
+.chip:active {
+  transform: translateY(1px);
+}
+.button:disabled,
+.chip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+/* The primary action carries an emission edge: a violet→cyan housing glow that
+   marks it as the lit control on the bench. */
+.button--primary {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--cyan) 16%, transparent), color-mix(in srgb, var(--violet) 16%, transparent)),
+    var(--raised);
+  border-color: var(--violet);
+  font-weight: 600;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--violet) 22%, transparent);
+}
+.button--primary:hover {
+  border-color: var(--cyan);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--cyan) 30%, transparent);
+}
+.button--start {
+  width: 100%;
+  font-size: var(--step-1);
+  letter-spacing: 0.12em;
+}
+.button--danger {
+  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+  color: #ffd9dc;
+}
+.button--danger:hover {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 30%, transparent);
+}
+.chip--danger {
+  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
+  color: #ffd9dc;
+}
+.chip[data-active],
+.button[data-active] {
+  border-color: var(--magenta);
+  background: color-mix(in srgb, var(--magenta) 14%, transparent);
+}
+.chip[aria-pressed='true'] {
+  border-color: var(--cyan);
+  background: color-mix(in srgb, var(--cyan) 14%, transparent);
+}
+
+.icon-button {
+  min-width: var(--tap);
+  min-height: var(--tap);
+  width: var(--tap);
+  height: var(--tap);
+  display: inline-grid;
+  place-items: center;
+  background: transparent;
+  border-color: transparent;
+}
+.stepper .icon-button {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  border-color: var(--line-bright);
+}
+
+.select,
+.input {
+  font-family: var(--font-ui);
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius-sm);
+  min-height: var(--tap);
+  padding: 0 10px;
+  width: 100%;
+  font-size: 0.9rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+.field--inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  margin-top: 0;
+}
+.field__label {
+  font-family: var(--font-data);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Range slider, theming the native control. */
+.slider,
+.morph__range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: var(--tap);
+  background: transparent;
+  cursor: pointer;
+}
+.slider::-webkit-slider-runnable-track {
+  height: 4px;
+  background: var(--line-bright);
+  border-radius: 3px;
+}
+.slider::-moz-range-track {
+  height: 4px;
+  background: var(--line-bright);
+  border-radius: 3px;
+}
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  margin-top: -7px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--text);
+  border: 2px solid var(--violet);
+}
+.slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text);
+  border: 2px solid var(--violet);
+}
+
+.radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+}
+
+/* Toggle switch. */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  min-height: var(--tap);
+}
+.switch--row {
+  width: 100%;
+}
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.switch__track {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--raised);
+  border: 1px solid var(--line-bright);
+  flex: none;
+  transition: background var(--t-fast) ease, border-color var(--t-fast) ease;
+}
+.switch__track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform var(--t-med) ease, background var(--t-fast) ease;
+}
+.switch input:checked + .switch__track {
+  background: color-mix(in srgb, var(--cyan) 18%, transparent);
+  border-color: var(--cyan);
+}
+.switch input:checked + .switch__track::after {
+  transform: translateX(18px);
+  background: var(--cyan);
+}
+.switch input:focus-visible + .switch__track {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.switch__label {
+  font-size: 0.88rem;
+}
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.stepper__value {
+  font-family: var(--font-data);
+  min-width: 2.2ch;
+  text-align: center;
+}
+
+/* =========================================================================
+   Source panel
+   ========================================================================= */
+.source__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 0.85rem;
+}
+.source__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--cyan);
+  flex: none;
+}
+.source__dot[data-kind='microphone'],
+.source__dot[data-kind='tab'] {
+  background: var(--magenta);
+}
+.source__kind {
+  font-family: var(--font-data);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.source__name {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Monitor toggle — silence the live source through the output (generated only). */
+.source__monitor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 2px;
+  font-family: var(--font-data);
+  font-size: 0.74rem;
+  letter-spacing: var(--track-tight);
+  color: var(--muted);
+  cursor: pointer;
+}
+.source__monitor input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--cyan);
+  cursor: pointer;
+}
+.source__monitor input:disabled {
+  cursor: default;
+}
+.source__live {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+  margin-top: 10px;
+}
+.dropzone {
+  margin-top: 12px;
+  border: 1px dashed var(--line-bright);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.dropzone[data-dragging] {
+  border-color: var(--cyan);
+  background: color-mix(in srgb, var(--cyan) 7%, transparent);
+}
+.dropzone[data-active] {
+  border-style: solid;
+  border-color: var(--violet);
+}
+.dropzone__hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+/* =========================================================================
+   Capture
+   ========================================================================= */
+.capture__mode {
+  border: 0;
+  padding: 0;
+  margin: 0 0 10px;
+  display: flex;
+  gap: 16px;
+}
+.capture__buttons,
+.capture__live,
+.capture__slots {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.capture__buttons .button {
+  flex: 1;
+}
+
+/* =========================================================================
+   Snapshot slots
+   ========================================================================= */
+.slots__pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.slot {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  background: var(--panel-2);
+}
+.slot[data-filled='true'] {
+  border-color: var(--violet);
+}
+.slot[data-auditioning] {
+  box-shadow: inset 0 0 0 1px var(--cyan);
+}
+.slot__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.slot__id {
+  font-family: var(--font-data);
+  font-size: 1.1rem;
+  letter-spacing: 0.1em;
+}
+.slot__label {
+  margin: 6px 0 2px;
+  font-size: 0.86rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.slot__time {
+  margin: 0 0 8px;
+  font-family: var(--font-data);
+  font-size: 0.7rem;
+  color: var(--faint);
+}
+.slot__actions {
+  display: flex;
+  gap: 6px;
+}
+.badge {
+  font-family: var(--font-data);
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line-bright);
+  color: var(--amber);
+}
+.badge--live {
+  border-color: color-mix(in srgb, var(--amber) 55%, transparent);
+}
+
+/* =========================================================================
+   Morph (signature element)
+   ========================================================================= */
+.morph__labels {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.morph__end {
+  font-family: var(--font-data);
+  font-size: var(--step--1);
+  font-weight: 500;
+  letter-spacing: var(--track-tight);
+  color: var(--muted);
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The morph position read out like a wavelength on a spectrometer dial. */
+.morph__readout {
+  font-family: var(--font-data);
+  font-size: var(--step-0);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+/* THE SIGNATURE — a spectroscope rail. The slit dispersing two captured sounds
+   into a continuum of emission lines; the thumb is the milled cursor you slide
+   along the dispersed spectrum. Taller than a normal slider so the spectral
+   material is unmistakably the hero. */
+.morph__track {
+  position: relative;
+  height: var(--tap);
+  display: flex;
+  align-items: center;
+}
+.morph__track::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 16px;
+  border-radius: 3px;
+  background: var(--spectrum-bands);
+  opacity: 0.95;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.5),
+    inset 0 1px 3px rgba(0, 0, 0, 0.55),
+    0 0 22px rgba(70, 212, 240, 0.12);
+}
+/* Fraunhofer absorption ticks engraved over the bands — a calibrated scale. */
+.morph__track::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 16px;
+  border-radius: 3px;
+  background: var(--fraunhofer);
+  pointer-events: none;
+  opacity: 0.85;
+}
+.morph[data-dim] .morph__track::before {
+  opacity: 0.55;
+}
+.morph__fill {
+  position: absolute;
+  left: 0;
+  height: 16px;
+  border-radius: 3px;
+  box-shadow: 0 0 16px var(--magenta-glow);
+  pointer-events: none;
+}
+.morph__range {
+  position: relative;
+  z-index: 1;
+}
+/* The milled cursor: a brushed-metal sled with a centred index line, sitting
+   proud of the rail with a hard machined edge and a soft drop shadow. */
+.morph__range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 34px;
+  border-radius: 3px;
+  background:
+    linear-gradient(90deg, transparent 46%, rgba(0, 0, 0, 0.7) 46% 54%, transparent 54%),
+    linear-gradient(180deg, #2a313d, #11141c);
+  border: 1px solid #424b59;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.7),
+    0 4px 10px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.morph__range::-moz-range-thumb {
+  width: 16px;
+  height: 34px;
+  border-radius: 3px;
+  background:
+    linear-gradient(90deg, transparent 46%, rgba(0, 0, 0, 0.7) 46% 54%, transparent 54%),
+    linear-gradient(180deg, #2a313d, #11141c);
+  border: 1px solid #424b59;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.7),
+    0 4px 10px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+/* =========================================================================
+   Macros + knobs
+   ========================================================================= */
+.macros__grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.macros__cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+}
+.macros__cell[data-linked='false'] {
+  border-style: dashed;
+}
+.macros__link {
+  font-family: var(--font-data);
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: 1px solid var(--line-bright);
+  border-radius: 999px;
+  color: var(--muted);
+  padding: 4px 8px;
+  cursor: pointer;
+  min-height: 32px;
+}
+.macros__link[aria-pressed='true'] {
+  color: var(--cyan);
+  border-color: var(--cyan);
+}
+
+.knob {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+}
+.knob__dial {
+  position: relative;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 38%, var(--raised), #0c1018);
+  border: 1px solid var(--line-bright);
+  display: grid;
+  place-items: center;
+  cursor: ns-resize;
+  touch-action: none;
+}
+.knob--sm .knob__dial {
+  width: 52px;
+  height: 52px;
+}
+.knob--lg .knob__dial {
+  width: 64px;
+  height: 64px;
+}
+.knob__pointer {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  width: 2px;
+  height: 38%;
+  margin-left: -1px;
+  background: var(--cyan);
+  border-radius: 2px;
+  transform-origin: bottom center;
+}
+.knob__value {
+  font-family: var(--font-data);
+  font-size: 0.62rem;
+  color: var(--muted);
+}
+.knob__label {
+  font-family: var(--font-data);
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.knob__hint {
+  font-size: 0.58rem;
+  color: var(--faint);
+  max-width: 9ch;
+  line-height: 1.2;
+}
+.knob[data-disabled] {
+  opacity: 0.4;
+}
+
+/* =========================================================================
+   Play bar
+   ========================================================================= */
+.playbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.playbar__controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.playbar__status {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.state-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-data);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line-bright);
+  color: var(--muted);
+}
+.state-pill__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.state-pill[data-state='live'] {
+  color: var(--cyan);
+  border-color: color-mix(in srgb, var(--cyan) 50%, transparent);
+}
+.state-pill[data-state='playing'] {
+  color: var(--magenta);
+  border-color: color-mix(in srgb, var(--magenta) 50%, transparent);
+}
+.state-pill[data-state='playing'] .state-pill__dot {
+  animation: pulse 1.1s ease-in-out infinite;
+}
+.state-pill--warn {
+  color: #ffd27a;
+  border-color: rgba(255, 210, 122, 0.6);
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* =========================================================================
+   Keyboard + MIDI strip
+   ========================================================================= */
+.kbd__hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+kbd {
+  font-family: var(--font-data);
+  font-size: 0.72rem;
+  padding: 1px 5px;
+  border: 1px solid var(--line-bright);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--panel-2);
+}
+.midi__devices {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.midi__state {
+  margin: 0 0 6px;
+}
+
+/* =========================================================================
+   Advanced panel
+   ========================================================================= */
+.disclosure {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font-family: var(--font-data);
+  font-size: var(--eyebrow);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--tap);
+}
+.disclosure__caret {
+  color: var(--cyan);
+}
+.advanced__body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin-top: 10px;
+}
+.advanced__group {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px 12px;
+  margin: 0;
+}
+.advanced__group legend {
+  font-family: var(--font-data);
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 0 6px;
+}
+.param {
+  display: flex;
+  flex-direction: column;
+  margin-top: 8px;
+}
+.param__label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.param__value {
+  font-family: var(--font-data);
+  color: var(--text);
+}
+
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.seg__option {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  padding: 8px 12px;
+  min-height: 38px;
+  cursor: pointer;
+}
+.seg__option[aria-checked='true'] {
+  background: color-mix(in srgb, var(--cyan) 16%, transparent);
+  color: var(--cyan);
+}
+
+/* =========================================================================
+   Modals
+   ========================================================================= */
+.modal__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 6, 10, 0.72);
+  backdrop-filter: blur(2px);
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  z-index: 100;
+}
+.modal {
+  width: min(560px, 100%);
+  max-height: 86vh;
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius);
+  padding: 18px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+}
+.modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.modal__title {
+  font-family: var(--font-data);
+  font-size: 0.95rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.modal__desc {
+  color: var(--muted);
+  font-size: 0.86rem;
+  margin: 8px 0 0;
+}
+.modal__body {
+  margin-top: 14px;
+}
+.modal__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+/* Share / sessions specifics */
+.share__size {
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+.share__size[data-over] strong {
+  color: var(--danger);
+}
+.share__error {
+  color: #ffd9d9;
+  background: rgba(239, 106, 106, 0.12);
+  border: 1px solid rgba(239, 106, 106, 0.4);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 0.85rem;
+}
+.share__consent {
+  align-items: flex-start;
+}
+
+.sessions__save,
+.sessions__io {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+.sessions__save .field {
+  flex: 1;
+  margin-top: 0;
+}
+.sessions__io {
+  margin: 12px 0;
+}
+.sessions__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sessions__item {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  background: var(--panel-2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sessions__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sessions__name {
+  font-weight: 600;
+}
+.sessions__date {
+  font-family: var(--font-data);
+  font-size: 0.7rem;
+  color: var(--faint);
+}
+.sessions__actions,
+.sessions__confirm,
+.sessions__rename {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.help__steps {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.help__steps li {
+  font-size: 0.9rem;
+}
+.help__version {
+  font-family: var(--font-data);
+  font-size: 0.72rem;
+  color: var(--faint);
+  margin-top: 14px;
+}
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Notices */
+.notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 6px 6px 6px 14px;
+  font-size: var(--step-0);
+}
+.notice--info {
+  background: color-mix(in srgb, var(--violet) 12%, transparent);
+  border-color: color-mix(in srgb, var(--violet) 40%, transparent);
+  justify-content: flex-start;
+  margin: 0;
+}
+
+/* =========================================================================
+   Responsive
+   ========================================================================= */
+@media (max-width: 920px) {
+  .stage {
+    grid-template-columns: 1fr;
+  }
+  .stage__display {
+    min-height: 260px;
+  }
+}
+@media (max-width: 560px) {
+  .strip {
+    grid-template-columns: 1fr;
+  }
+  .macros__grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .slots__pair {
+    grid-template-columns: 1fr;
+  }
+  .topbar__tag {
+    display: none;
+  }
+}
+
+/* Reduced motion: stop all transitions/animations. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+:root[data-reduced-motion='true'] .state-pill[data-state='playing'] .state-pill__dot {
+  animation: none;
+}

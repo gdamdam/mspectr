@@ -1,0 +1,55 @@
+name: Deploy to GitHub Pages
+
+# Build the Vite app and publish dist/ to GitHub Pages on every push to main.
+# One-time setup: repo → Settings → Pages → Source: "GitHub Actions", and add the
+# custom domain mspectr.mpump.live (the CNAME file in public/ is copied to dist/).
+# Served at https://mspectr.mpump.live with base '/'.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one in-flight Pages deploy at a time; cancel a superseded run.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: actions/configure-pages@v5
+      - run: npm ci
+      - run: npm run check
+      # `check` already builds, but build explicitly so dist/ is present even if
+      # the check pipeline changes later.
+      - run: npm run build
+      # The custom domain must survive every deploy. Vite copies public/CNAME to
+      # dist/CNAME; fail loudly if it is missing or wrong so we never publish a
+      # build that would drop the domain.
+      - name: Verify CNAME
+        run: grep -qx mspectr.mpump.live dist/CNAME
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
