@@ -85,9 +85,16 @@ describe('renderGeneratedBuffer', () => {
   it('every sample is finite', () => {
     for (const id of GENERATED_SOURCE_IDS) {
       const data = channel(renderGeneratedBuffer(makeCtx(), id))
+      let firstNonFinite = -1
       for (let i = 0; i < data.length; i++) {
-        expect(Number.isFinite(data[i])).toBe(true)
+        if (!Number.isFinite(data[i])) {
+          firstNonFinite = i
+          break
+        }
       }
+      // Keep assertion count proportional to source count. An expect per sample
+      // adds hundreds of thousands of Vitest assertions and can time out in CI.
+      expect(firstNonFinite, `${id} has a non-finite sample`).toBe(-1)
     }
   })
 
