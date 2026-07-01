@@ -434,15 +434,37 @@ export function App() {
       ) : null}
 
       <main id="main" className="stage">
-        <div className="stage__display">
-          <SpectralDisplay
-            telemetry={ui.telemetry}
-            xy={patch.xy}
-            onXYChange={(x, y) => dispatch({ type: 'set-xy', x, y })}
-            xyLabels={xyLabels}
-            active={ui.audioStarted}
-            reducedMotion={ui.prefs.reducedMotion}
-            reducedIntensity={ui.prefs.reducedIntensity}
+        <div className="stage__perform">
+          <div className="stage__display">
+            <SpectralDisplay
+              telemetry={ui.telemetry}
+              xy={patch.xy}
+              onXYChange={(x, y) => dispatch({ type: 'set-xy', x, y })}
+              xyLabels={xyLabels}
+              active={ui.audioStarted}
+              reducedMotion={ui.prefs.reducedMotion}
+              reducedIntensity={ui.prefs.reducedIntensity}
+            />
+          </div>
+
+          <section className="panel" aria-labelledby="morph-heading">
+            <h2 id="morph-heading" className="panel__eyebrow">
+              Morph
+            </h2>
+            <MorphControl
+              value={patch.params.morph}
+              onChange={(v) => dispatch({ type: 'set-morph', value: v })}
+              labelA={ui.snapshotA?.label ?? 'A'}
+              labelB={ui.snapshotB?.label ?? 'B'}
+              reducedIntensity={ui.prefs.reducedIntensity}
+            />
+          </section>
+
+          <MacroPanel
+            values={patch.macros}
+            links={patch.macroLinks}
+            onValue={(id: MacroId, v) => dispatch({ type: 'set-macro', id, value: v })}
+            onLink={(id: MacroId, linked) => dispatch({ type: 'set-macro-link', id, linked })}
           />
         </div>
 
@@ -481,26 +503,6 @@ export function App() {
             auditioning={ui.auditioning}
             onAudition={controls.audition}
             onClear={clearSnapshot}
-          />
-
-          <section className="panel" aria-labelledby="morph-heading">
-            <h2 id="morph-heading" className="panel__eyebrow">
-              Morph
-            </h2>
-            <MorphControl
-              value={patch.params.morph}
-              onChange={(v) => dispatch({ type: 'set-morph', value: v })}
-              labelA={ui.snapshotA?.label ?? 'A'}
-              labelB={ui.snapshotB?.label ?? 'B'}
-              reducedIntensity={ui.prefs.reducedIntensity}
-            />
-          </section>
-
-          <MacroPanel
-            values={patch.macros}
-            links={patch.macroLinks}
-            onValue={(id: MacroId, v) => dispatch({ type: 'set-macro', id, value: v })}
-            onLink={(id: MacroId, linked) => dispatch({ type: 'set-macro-link', id, linked })}
           />
         </div>
       </main>

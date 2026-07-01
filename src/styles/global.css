@@ -290,12 +290,20 @@ h2 {
 
 .stage {
   display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr);
+  /* Left = performance (display + morph + macros); right = material pipeline
+     (source + capture + snapshots). Columns are top-aligned so the display does
+     not stretch to the rack's height. */
+  grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr);
   gap: 14px;
-  align-items: stretch;
+  align-items: start;
+}
+.stage__perform {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
 }
 .stage__display {
-  min-height: 340px;
   display: flex;
 }
 .stage__rack {
@@ -335,7 +343,9 @@ h2 {
 .spectral-display {
   position: relative;
   flex: 1;
-  min-height: 340px;
+  /* Capped, viewport-relative height — the display is the hero but must not push
+     the controls off-screen. */
+  height: clamp(300px, 44vh, 480px);
   border-radius: var(--radius);
   border: 1px solid var(--line-bright);
   background:
@@ -1397,8 +1407,8 @@ kbd {
   .stage {
     grid-template-columns: 1fr;
   }
-  .stage__display {
-    min-height: 260px;
+  .spectral-display {
+    height: clamp(240px, 38vh, 340px);
   }
 }
 @media (max-width: 560px) {
