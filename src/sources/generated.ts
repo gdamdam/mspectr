@@ -164,71 +164,87 @@ function makeBandpass(sampleRate: number, f: number, q: number): (x: number) => 
 // ---------------------------------------------------------------------------
 
 /**
- * harmonic-string: a plucked-string-like tone — a rich harmonic series whose
- * upper partials decay faster than the fundamental, with a slight inharmonic
- * detune on each partial, re-plucked twice across the loop with a gentle envelope.
+ * harmonic-string: a bright, sustained bowed-string tone. A full harmonic series
+ * (>20 partials) with a gentle high-frequency roll-off — but shaped so real energy
+ * reaches well up the series (a soft "formant" bump around the 5th–9th partials,
+ * as on a bowed violin/cello) rather than collapsing onto the fundamental. The
+ * result sits clearly higher and brighter than a dull thud. Sustained (not
+ * plucked): a slow bow swell and a subtle per-partial vibrato keep it alive and
+ * seamlessly loopable.
  */
 function renderHarmonicString(rng: () => number, sr: number, length: number): Float32Array {
   const data = new Float32Array(length)
-  const fundamental = 110 // A2
-  const partials = 16
-  // Fixed per-partial detune & phase from the seeded RNG (computed once).
+  const fundamental = 165 // ~E3 — higher than before so the whole series rides up
+  const partials = 24
   const detune = new Float32Array(partials)
   const phase = new Float32Array(partials)
+  const amp = new Float32Array(partials)
   for (let h = 0; h < partials; h++) {
-    detune[h] = 1 + (rng() - 0.5) * 0.004 * (h + 1) // inharmonic stretch grows with partial
+    const n = h + 1
+    // Slight seeded inharmonic stretch (string stiffness) — grows with partial.
+    detune[h] = 1 + rng() * 0.0006 * n
     phase[h] = rng() * TWO_PI
+    // Sawtooth-like 1/n base roll-off, but with a broad bowed-string formant bump
+    // near the 6th partial so mid-high energy dominates → high centroid, bright.
+    const rollOff = 1 / n
+    const bump = 1 + 1.8 * Math.exp(-((n - 6) * (n - 6)) / 24)
+    amp[h] = rollOff * bump
   }
-  const plucks = 2
-  const pluckLen = length / plucks
+  const vibHz = 4.5
+  const vibDepth = 0.006 // ±0.6% pitch vibrato
   for (let i = 0; i < length; i++) {
     const t = i / sr
-    const tInPluck = (i % pluckLen) / sr
+    // Slow bow swell over the whole loop keeps the sustain living.
+    const swell = 0.85 + 0.15 * Math.sin(TWO_PI * 0.2 * t - Math.PI / 2)
+    const vib = 1 + vibDepth * Math.sin(TWO_PI * vibHz * t)
     let sample = 0
     for (let h = 0; h < partials; h++) {
-      const freq = fundamental * (h + 1) * detune[h]
-      // Higher partials decay faster — characteristic of a struck/plucked string.
-      const decay = Math.exp(-tInPluck * (1.2 + h * 0.7))
-      const amp = decay / (h + 1)
-      sample += amp * Math.sin(TWO_PI * freq * t + phase[h])
+      const freq = fundamental * (h + 1) * detune[h] * vib
+      sample += amp[h] * Math.sin(TWO_PI * freq * t + phase[h])
     }
-    // Soft attack on each pluck to avoid a click at the re-pluck point.
-    const attack = 1 - Math.exp(-tInPluck * 400)
-    data[i] = sample * attack
+    data[i] = sample * swell
   }
   return data
 }
 
 /**
- * breath-choir: a filtered-noise vocal bed with a few vowel formant peaks and a
- * slow vibrato that slides the formant centres, giving an evolving choral pad.
+ * breath-choir: the airy, high, breathy source — a wash of high-formant filtered
+ * noise (the "ss/ff" air of a choir) sitting well above the other sources, with
+ * only a faint tonal core for pitch. Deliberately the brightest/highest-centroid
+ * source: emphasis on 2–5 kHz breath formants plus a broadband air shelf, so it
+ * reads as "air and vowel" rather than a low hum.
  */
 function renderBreathChoir(rng: () => number, sr: number, length: number): Float32Array {
   const data = new Float32Array(length)
-  // Vowel-ish formant centres (Hz) with relative gains.
+  // High, breathy vowel formants — weighted toward the top so this is the
+  // brightest source. Low first formant kept quiet so it does not sit on the string.
   const formants = [
-    { f: 320, g: 1.0, q: 7 },
-    { f: 800, g: 0.7, q: 9 },
-    { f: 1200, g: 0.5, q: 11 },
-    { f: 2600, g: 0.25, q: 13 },
+    { f: 700, g: 0.35, q: 6 },
+    { f: 1900, g: 0.9, q: 8 },
+    { f: 2900, g: 1.0, q: 9 },
+    { f: 4200, g: 0.85, q: 10 },
+    { f: 6200, g: 0.6, q: 8 },
   ]
   const filters = formants.map((fm) => makeBandpass(sr, fm.f, fm.q))
   const vibFilters = formants.map((fm) => makeBandpass(sr, fm.f * 1.5, fm.q))
-  const vibratoHz = 0.7
-  const vibratoDepth = 0.18
-  // Pre-roll the filters with seeded noise so the state isn't a cold zero start
-  // (keeps the loop head consistent with the steady-state body).
+  // A broadband "air" high-pass-ish shelf via a wide top band-pass keeps the very
+  // top alive so the centroid stays high after the engine's windowing.
+  const air = makeBandpass(sr, 8500, 1.2)
+  const vibratoHz = 0.6
+  const vibratoDepth = 0.16
+  // A quiet tonal core (soft sine at a mid pitch) gives just enough pitch sense.
+  const coreHz = 330
   for (let h = 0; h < formants.length; h++) {
     for (let k = 0; k < 256; k++) {
       const w = rng() * 2 - 1
       filters[h](w)
       vibFilters[h](w)
+      air(w)
     }
   }
   for (let i = 0; i < length; i++) {
     const t = i / sr
     const white = rng() * 2 - 1
-    // Vibrato as a slow crossfade between two detuned formant banks (cheap, stable).
     const vib = 0.5 + 0.5 * Math.sin(TWO_PI * vibratoHz * t)
     const blend = vibratoDepth * vib
     let sample = 0
@@ -237,29 +253,37 @@ function renderBreathChoir(rng: () => number, sr: number, length: number): Float
       const b = vibFilters[h](white) * blend
       sample += (a + b) * formants[h].g
     }
-    // Slow amplitude swell so the pad evolves over the loop.
-    const swell = 0.7 + 0.3 * Math.sin(TWO_PI * 0.15 * t)
+    sample += air(white) * 0.5 // top-end air
+    sample += Math.sin(TWO_PI * coreHz * t) * 0.12 // faint tonal core
+    const swell = 0.75 + 0.25 * Math.sin(TWO_PI * 0.13 * t)
     data[i] = sample * swell
   }
   return data
 }
 
 /**
- * metallic-strike: an inharmonic bell — partials at non-integer ratios with
- * exponential decay, struck repeatedly across the loop.
+ * metallic-strike: a bright, ringing inharmonic bell/bar. Non-integer partial
+ * ratios (clearly NOT a harmonic series → distinct from the string), pitched a
+ * good deal higher, with the upper partials carrying real sustained energy rather
+ * than decaying instantly. Struck repeatedly across the loop, but each partial
+ * rings long enough to keep the bell shimmering and bright.
  */
 function renderMetallicStrike(rng: () => number, sr: number, length: number): Float32Array {
   const data = new Float32Array(length)
-  const base = 220
-  // Bell-like inharmonic ratios (roughly modelled on a struck bar/bell spectrum).
-  const ratios = [1.0, 2.76, 5.4, 8.93, 13.34, 18.64]
+  const base = 440 // an octave up from before — clearly higher than the string
+  // Inharmonic bar/bell ratios, extended high so the bell is genuinely bright.
+  const ratios = [1.0, 2.76, 5.4, 8.93, 13.34, 18.64, 24.1, 30.2]
   const partials = ratios.length
   const phase = new Float32Array(partials)
   const decayRate = new Float32Array(partials)
+  const gain = new Float32Array(partials)
   for (let h = 0; h < partials; h++) {
     phase[h] = rng() * TWO_PI
-    // Higher partials ring shorter; slight seeded variation per partial.
-    decayRate[h] = 2.5 + h * 1.1 + rng() * 0.5
+    // Long, slow ring (bell-like) with only mild extra decay up the series, so the
+    // bright partials survive → high, ringing centroid rather than a low clang.
+    decayRate[h] = 0.8 + h * 0.35 + rng() * 0.3
+    // Nearly flat gain across partials (a bell's upper modes stay loud).
+    gain[h] = 1 / Math.sqrt(h + 1)
   }
   const strikes = 3
   const strikeLen = length / strikes
@@ -270,7 +294,7 @@ function renderMetallicStrike(rng: () => number, sr: number, length: number): Fl
     for (let h = 0; h < partials; h++) {
       const freq = base * ratios[h]
       const env = Math.exp(-tInStrike * decayRate[h])
-      sample += (env / (h + 1)) * Math.sin(TWO_PI * freq * t + phase[h])
+      sample += gain[h] * env * Math.sin(TWO_PI * freq * t + phase[h])
     }
     const attack = 1 - Math.exp(-tInStrike * 2000)
     data[i] = sample * attack
@@ -279,34 +303,43 @@ function renderMetallicStrike(rng: () => number, sr: number, length: number): Fl
 }
 
 /**
- * noise-reed: band-passed noise with a couple of resonant harmonic peaks, giving
- * a buzzy sustained reed/oboe-like character.
+ * noise-reed: a buzzy, dense, mid-high reed (oboe/harmonica-like). A bright
+ * sawtooth drive (rich in odd+even harmonics) is passed through a stack of
+ * resonant band-passes on the upper harmonics, so the tone is dense and buzzy and
+ * sits in the mid-high band — clearly noisier/brighter than the string, but lower
+ * and grittier than the airy choir. A little broadband reed "buzz" fills the gaps.
  */
 function renderNoiseReed(rng: () => number, sr: number, length: number): Float32Array {
   const data = new Float32Array(length)
-  const fundamental = 196 // G3
-  // Two resonant band-passes on harmonics give the buzzy reed formant pair.
-  const res1 = makeBandpass(sr, fundamental * 2, 14)
-  const res2 = makeBandpass(sr, fundamental * 3, 18)
-  const breath = makeBandpass(sr, fundamental * 6, 3)
-  // Warm up filter state with seeded noise (avoid cold-start transient at head).
-  for (let k = 0; k < 256; k++) {
-    const w = rng() * 2 - 1
-    res1(w)
-    res2(w)
-    breath(w)
+  const fundamental = 262 // ~C4 — mid register
+  // Resonant peaks on the upper harmonics give the dense, buzzy reed formants.
+  const res = [
+    { bp: makeBandpass(sr, fundamental * 3, 16), g: 1.0 },
+    { bp: makeBandpass(sr, fundamental * 5, 18), g: 0.85 },
+    { bp: makeBandpass(sr, fundamental * 7, 20), g: 0.7 },
+    { bp: makeBandpass(sr, fundamental * 9, 22), g: 0.55 },
+  ]
+  const buzz = makeBandpass(sr, fundamental * 6, 2.5) // broadband reed rasp
+  const nHarm = 14
+  for (let r = 0; r < res.length; r++) {
+    for (let k = 0; k < 256; k++) {
+      const w = rng() * 2 - 1
+      res[r].bp(w)
+      buzz(w)
+    }
   }
   for (let i = 0; i < length; i++) {
     const t = i / sr
     const white = rng() * 2 - 1
-    // A faint sawtooth-ish drive at the fundamental reinforces the pitch sense.
-    const drive = white * 0.6 + Math.sin(TWO_PI * fundamental * t) * 0.4
-    const r1 = res1(drive) * 1.0
-    const r2 = res2(drive) * 0.6
-    const air = breath(white) * 0.15
-    // Slow tremolo for a living sustained tone.
+    // Bright band-limited sawtooth (sum of harmonics) — dense harmonic drive.
+    let saw = 0
+    for (let h = 1; h <= nHarm; h++) saw += Math.sin(TWO_PI * fundamental * h * t) / h
+    const drive = saw * 0.6 + white * 0.5 // buzzy: tone + noise mixed
+    let sample = 0
+    for (let r = 0; r < res.length; r++) sample += res[r].bp(drive) * res[r].g
+    sample += buzz(white) * 0.35
     const trem = 0.85 + 0.15 * Math.sin(TWO_PI * 5.5 * t)
-    data[i] = (r1 + r2 + air) * trem
+    data[i] = sample * trem
   }
   return data
 }

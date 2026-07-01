@@ -82,11 +82,12 @@ function macros(o: Partial<MacroValues>): MacroValues {
 // ---------------------------------------------------------------------------
 
 export const PRESETS: Preset[] = [
-  // 1 — Glass Memory: frozen harmonic string, bright, slowly animated shimmer.
+  // 1 — Glass Memory: frozen harmonic string, VERY bright (max tilt), locked
+  //     phase, octave up. Facet: bright + high formant + phase-lock stillness.
   {
     id: 'glass-memory',
     name: 'Glass Memory',
-    hint: 'Frozen harmonic shimmer that slowly breathes — bright and still.',
+    hint: 'Frozen harmonic shimmer held perfectly still — glassy and bright.',
     group: 'Frozen',
     source: 'harmonic-string',
     captureStrategy: 'average',
@@ -95,30 +96,32 @@ export const PRESETS: Preset[] = [
     patch: patch('glass-memory', {
       scale: 'major',
       seed: 0x51a5,
+      octave: 1,
       params: params({
         freeze: true,
-        freezePhase: 'animate',
-        tilt: 0.35,
-        formant: 2,
-        blur: 0.12,
-        phaseMotion: 0.25,
+        freezePhase: 'lock', // locked = still, glassy
+        tilt: 0.9, // very bright
+        formant: 7, // push formants up for glass
+        blur: 0.05,
+        phaseMotion: 0.05,
         harmonyVoices: 2,
         harmonyInterval: 'shimmer',
         harmonyMix: 0.4,
         attack: 0.4,
         release: 2.5,
-        reverbAmount: 0.45,
+        reverbAmount: 0.4,
         earlyReflections: 0.35,
-        diffusion: 0.5,
+        diffusion: 0.4,
         stereoWidth: 0.7,
       }),
-      macros: macros({ body: 0.7, motion: 0.25, harmony: 0.4, space: 0.45 }),
+      macros: macros({ body: 0.7, motion: 0.05, harmony: 0.4, space: 0.4 }),
       macroLinks: links({ space: true }),
-      xy: { x: 0.5, y: 0.3 },
+      xy: { x: 0.5, y: 0.1 },
     }),
   },
 
-  // 2 — Frozen Choir: held breath-choir vowel, wide, locked phase.
+  // 2 — Frozen Choir: held breath-choir vowel, neutral tilt, wide, locked phase.
+  //     Facet: airy top-band source + phase-lock + minor-triad harmony, vast width.
   {
     id: 'frozen-choir',
     name: 'Frozen Choir',
@@ -135,9 +138,9 @@ export const PRESETS: Preset[] = [
       params: params({
         freeze: true,
         freezePhase: 'lock',
-        tilt: -0.1,
+        tilt: 0.3, // bright, sits high in the air-band (contrasts the dark Breath Organ)
         formant: 0,
-        blur: 0.25,
+        blur: 0.15,
         phaseMotion: 0.05,
         harmonyVoices: 3,
         harmonyInterval: 'minor-triad',
@@ -147,7 +150,7 @@ export const PRESETS: Preset[] = [
         reverbAmount: 0.7,
         earlyReflections: 0.55,
         diffusion: 0.7,
-        stereoWidth: 0.9,
+        stereoWidth: 0.95,
       }),
       macros: macros({ body: 0.45, motion: 0.1, harmony: 0.6, space: 0.7 }),
       macroLinks: links({ harmony: true, space: true }),
@@ -155,7 +158,8 @@ export const PRESETS: Preset[] = [
     }),
   },
 
-  // 3 — Iron Bloom: metallic strike, formant-shifted up, gated and clangorous.
+  // 3 — Iron Bloom: metallic strike, bright, gated + animated, plucked envelope.
+  //     Facet: inharmonic bell source + gate + fast attack + fifths, dry-ish.
   {
     id: 'iron-bloom',
     name: 'Iron Bloom',
@@ -168,13 +172,14 @@ export const PRESETS: Preset[] = [
     patch: patch('iron-bloom', {
       scale: 'chromatic',
       seed: 0x190b,
+      octave: -1,
       params: params({
         freeze: false,
-        tilt: 0.5,
-        formant: 4,
-        blur: 0.05,
-        gate: 0.2,
-        phaseMotion: 0.15,
+        tilt: 0.35, // bright, but the source is already high
+        formant: 0,
+        blur: 0.0, // razor sharp bell partials
+        gate: 0.3, // strong spectral gate → sparse, clangorous
+        phaseMotion: 0.2,
         harmonyVoices: 1,
         harmonyInterval: 'fifths',
         harmonyMix: 0.3,
@@ -182,22 +187,23 @@ export const PRESETS: Preset[] = [
         decay: 0.6,
         sustain: 0.4,
         release: 1.8,
-        reverbAmount: 0.3,
+        reverbAmount: 0.25,
         earlyReflections: 0.4,
-        diffusion: 0.35,
+        diffusion: 0.3,
         stereoWidth: 0.6,
       }),
-      macros: macros({ body: 0.75, motion: 0.2, harmony: 0.25, space: 0.3 }),
+      macros: macros({ body: 0.75, motion: 0.2, harmony: 0.25, space: 0.25 }),
       macroLinks: links({ body: true }),
-      xy: { x: 0.5, y: 0.4 },
+      xy: { x: 0.5, y: 0.5 },
     }),
   },
 
-  // 4 — Hollow Radio: noise-reed, dark + heavily blurred, lo-fi formant dip.
+  // 4 — Hollow Radio: noise-reed, DARK (negative tilt) + formant dip, gritty.
+  //     Facet: buzzy source darkened by tilt + downward formant → lo-fi, no blur.
   {
     id: 'hollow-radio',
     name: 'Hollow Radio',
-    hint: 'A distant, hollowed-out broadcast smeared into noise and haze.',
+    hint: 'A distant, hollowed-out broadcast — gritty, dark, mono-ish.',
     group: 'Textural',
     source: 'noise-reed',
     captureStrategy: 'average',
@@ -208,27 +214,28 @@ export const PRESETS: Preset[] = [
       seed: 0x4ad1,
       params: params({
         freeze: false,
-        tilt: -0.6,
-        formant: -4,
-        blur: 0.45,
-        gate: 0.1,
-        phaseMotion: 0.4,
+        tilt: -0.7, // dark — this is the deliberately dark reed
+        formant: -6, // formants pulled down for the "hollow" telephone dip
+        blur: 0.1, // light — grit preserved, not smeared
+        gate: 0.15,
+        phaseMotion: 0.35,
         harmonyVoices: 0,
         harmonyMix: 0.2,
         attack: 0.15,
         release: 1.2,
-        reverbAmount: 0.4,
-        earlyReflections: 0.5,
-        diffusion: 0.55,
-        stereoWidth: 0.5,
+        reverbAmount: 0.3,
+        earlyReflections: 0.35,
+        diffusion: 0.35,
+        stereoWidth: 0.35, // narrow, mono-ish radio
       }),
-      macros: macros({ body: 0.25, motion: 0.45, harmony: 0, space: 0.4 }),
+      macros: macros({ body: 0.25, motion: 0.35, harmony: 0, space: 0.3 }),
       macroLinks: links({ motion: true }),
-      xy: { x: 0.4, y: 0.6 },
+      xy: { x: 0.25, y: 0.15 },
     }),
   },
 
-  // 5 — Harmonic Fog: harmonic string under deep blur + diffusion, near-frozen.
+  // 5 — Harmonic Fog: harmonic string under DEEP blur + diffusion, near-frozen.
+  //     Facet: the one deliberate high-blur "fog" preset — smear + animate.
   {
     id: 'harmonic-fog',
     name: 'Harmonic Fog',
@@ -244,10 +251,10 @@ export const PRESETS: Preset[] = [
       params: params({
         freeze: true,
         freezePhase: 'animate',
-        tilt: -0.2,
-        formant: 0,
-        blur: 0.55,
-        phaseMotion: 0.5,
+        tilt: 0.25, // slightly bright so fog doesn't drop into the dark cluster
+        formant: 3,
+        blur: 0.65, // THE fog preset — heavy smear (reserved high blur)
+        phaseMotion: 0.55,
         harmonyVoices: 2,
         harmonyInterval: 'fourths-fifths',
         harmonyMix: 0.45,
@@ -264,7 +271,8 @@ export const PRESETS: Preset[] = [
     }),
   },
 
-  // 6 — Breath Organ: breath-choir as a sustaining organ, fifths, mid space.
+  // 6 — Breath Organ: breath-choir as a sustaining organ, shift-stacked fifths.
+  //     Facet: airy source pitched DOWN (shift) into open fifths, sustained organ.
   {
     id: 'breath-organ',
     name: 'Breath Organ',
@@ -277,11 +285,13 @@ export const PRESETS: Preset[] = [
     patch: patch('breath-organ', {
       scale: 'mixolydian',
       seed: 0xb103,
+      octave: -1,
       params: params({
         freeze: false,
-        tilt: 0.05,
-        formant: 1,
-        blur: 0.1,
+        tilt: -0.55, // darken the airy source into a warm organ body (distinct from Frozen Choir)
+        shift: -12, // relocate the whole spectrum an octave down — genuinely separates the breath-choir trio
+        formant: -5, // pull the breath formants down into an organ register
+        blur: 0.2,
         phaseMotion: 0.2,
         harmonyVoices: 3,
         harmonyInterval: 'fifths',
@@ -300,7 +310,8 @@ export const PRESETS: Preset[] = [
     }),
   },
 
-  // 7 — Spectral Bells: metallic strike, shimmer harmony, bright + sparse.
+  // 7 — Spectral Bells: metallic strike, MAX bright + shimmer harmony, sparse.
+  //     Facet: bell source + shimmer octave stack + high tilt, wide + spacious.
   {
     id: 'spectral-bells',
     name: 'Spectral Bells',
@@ -313,12 +324,13 @@ export const PRESETS: Preset[] = [
     patch: patch('spectral-bells', {
       scale: 'major',
       seed: 0xbe11,
+      octave: 1,
       params: params({
         freeze: false,
-        tilt: 0.55,
-        formant: 5,
+        tilt: 0.7,
+        formant: 4,
         blur: 0.02,
-        gate: 0.15,
+        gate: 0.1,
         phaseMotion: 0.35,
         harmonyVoices: 3,
         harmonyInterval: 'shimmer',
@@ -330,7 +342,7 @@ export const PRESETS: Preset[] = [
         reverbAmount: 0.5,
         earlyReflections: 0.55,
         diffusion: 0.45,
-        stereoWidth: 0.85,
+        stereoWidth: 0.9,
       }),
       macros: macros({ body: 0.8, motion: 0.35, harmony: 0.55, space: 0.5 }),
       macroLinks: links({ harmony: true, space: true }),
@@ -338,7 +350,8 @@ export const PRESETS: Preset[] = [
     }),
   },
 
-  // 8 — Slow Machine: noise-reed cluster, mechanical motion, mid-dark.
+  // 8 — Slow Machine: noise-reed cluster, NEUTRAL tilt, heavy phase motion.
+  //     Facet: buzzy source + cluster harmony + strong phaseMotion (grinding), dry.
   {
     id: 'slow-machine',
     name: 'Slow Machine',
@@ -353,28 +366,29 @@ export const PRESETS: Preset[] = [
       seed: 0x510c,
       params: params({
         freeze: false,
-        tilt: -0.3,
-        formant: -2,
-        blur: 0.3,
-        gate: 0.25,
-        phaseMotion: 0.6,
+        tilt: 0.15, // slightly bright — keeps the reed grit up, away from Hollow Radio's dark
+        formant: 2,
+        blur: 0.15,
+        gate: 0.3,
+        phaseMotion: 0.8, // heavy grind
         harmonyVoices: 2,
         harmonyInterval: 'cluster',
         harmonyMix: 0.5,
         attack: 0.05,
         release: 0.8,
-        reverbAmount: 0.25,
+        reverbAmount: 0.2,
         earlyReflections: 0.3,
         diffusion: 0.5,
-        stereoWidth: 0.55,
+        stereoWidth: 0.5,
       }),
-      macros: macros({ body: 0.4, motion: 0.6, harmony: 0.5, space: 0.3 }),
+      macros: macros({ body: 0.4, motion: 0.8, harmony: 0.5, space: 0.25 }),
       macroLinks: links({ motion: true, harmony: true }),
-      xy: { x: 0.4, y: 0.6 },
+      xy: { x: 0.3, y: 0.7 },
     }),
   },
 
-  // 9 — Formant Tide: harmonic string with a swept formant, gentle motion.
+  // 9 — Formant Tide: harmonic string, warm mid-dark, swept formant, octaves.
+  //     Facet: string darkened + downward formant sweep + octave doubling, mellow.
   {
     id: 'formant-tide',
     name: 'Formant Tide',
@@ -387,10 +401,12 @@ export const PRESETS: Preset[] = [
     patch: patch('formant-tide', {
       scale: 'dorian',
       seed: 0xf17d,
+      octave: -1,
       params: params({
         freeze: false,
-        tilt: 0.1,
-        formant: -3,
+        tilt: -0.4, // warm/dark string — contrast to bright Glass Memory
+        shift: -7, // drop spectral energy a fifth — pulls it clear of Harmonic Fog
+        formant: -4, // formants swept down for the vowel "tide"
         blur: 0.15,
         phaseMotion: 0.3,
         harmonyVoices: 1,
@@ -406,17 +422,18 @@ export const PRESETS: Preset[] = [
       }),
       macros: macros({ body: 0.5, motion: 0.3, harmony: 0.3, space: 0.4 }),
       macroLinks: links({ body: true }),
-      xy: { x: 0.3, y: 0.55 },
+      xy: { x: 0.35, y: 0.25 },
     }),
   },
 
-  // 10 — Noise Cathedral: breath-choir + noise wash, maximal space, dark.
+  // 10 — Noise Cathedral: breath-choir + noise wash, maximal space, mid blur.
+  //      Facet: airy source + 4-voice fourths/fifths + huge reverb, animated.
   {
     id: 'noise-cathedral',
     name: 'Noise Cathedral',
-    hint: 'An immense, dark reverberant nave of breath and noise.',
+    hint: 'An immense reverberant nave of buzzing reed-noise.',
     group: 'Frozen',
-    source: 'breath-choir',
+    source: 'noise-reed',
     captureStrategy: 'average',
     calibrationDb: -6,
     xyMapping: { x: { param: 'reverbAmount', min: 0.3, max: 0.85 }, y: { param: 'diffusion', min: 0.2, max: 0.8 } },
@@ -424,12 +441,13 @@ export const PRESETS: Preset[] = [
       scale: 'minor',
       seed: 0xca7e,
       polyphony: 4,
+      octave: 1,
       params: params({
         freeze: true,
         freezePhase: 'animate',
-        tilt: -0.45,
-        formant: -2,
-        blur: 0.4,
+        tilt: 0.6, // very bright airy wash — sits high, clear of the dark noise-reed presets
+        formant: 7,
+        blur: 0.2, // keep spectral detail so it stays bright rather than smearing dark
         phaseMotion: 0.45,
         harmonyVoices: 4,
         harmonyInterval: 'fourths-fifths',
@@ -441,7 +459,7 @@ export const PRESETS: Preset[] = [
         diffusion: 0.8,
         stereoWidth: 1,
       }),
-      macros: macros({ body: 0.3, motion: 0.45, harmony: 0.7, space: 0.9 }),
+      macros: macros({ body: 0.85, motion: 0.3, harmony: 0.7, space: 0.9 }),
       macroLinks: LINK_ALL,
       xy: { x: 0.7, y: 0.6 },
     }),
