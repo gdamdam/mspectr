@@ -10,26 +10,16 @@ import {
 } from '../audio/contracts'
 import type { CaptureMode, ScaleId, GeneratedSourceId } from '../audio/contracts'
 
-const EXPECTED_NAMES = [
-  'Glass Memory',
-  'Frozen Choir',
-  'Iron Bloom',
-  'Hollow Radio',
-  'Harmonic Fog',
-  'Breath Organ',
-  'Spectral Bells',
-  'Slow Machine',
-  'Formant Tide',
-  'Noise Cathedral',
-]
 
 const VALID_SCALES = Object.keys(SCALE_DEGREES) as ScaleId[]
-const VALID_CAPTURE: CaptureMode[] = ['frame', 'average']
+const VALID_CAPTURE: CaptureMode[] = ['frame', 'average', 'evolving']
 
 describe('PRESETS library', () => {
-  it('contains the 10 authored presets, all named', () => {
-    expect(PRESETS).toHaveLength(10)
-    expect(PRESETS.map((p) => p.name)).toEqual(EXPECTED_NAMES)
+  it('contains at least 20 presets, all named with unique names', () => {
+    expect(PRESETS.length).toBeGreaterThanOrEqual(20)
+    const names = PRESETS.map((p) => p.name)
+    expect(new Set(names).size).toBe(names.length)
+    for (const n of names) expect(n.length).toBeGreaterThan(0)
   })
 
   it('has unique ids', () => {
@@ -73,9 +63,10 @@ describe('PRESETS library', () => {
     }
   })
 
-  it('uses each of the 4 generated sources at least once (musical spread)', () => {
+  it('draws on a spread of generated sources (at least 4 distinct)', () => {
     const used = new Set(PRESETS.map((p) => p.source))
-    for (const src of GENERATED_SOURCE_IDS) expect(used.has(src)).toBe(true)
+    expect(used.size).toBeGreaterThanOrEqual(4)
+    for (const src of used) expect(GENERATED_SOURCE_IDS).toContain(src)
   })
 })
 

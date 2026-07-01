@@ -135,12 +135,32 @@ export type GeneratedSourceId =
   | 'breath-choir'
   | 'metallic-strike'
   | 'noise-reed'
+  | 'glass-harmonica'
+  | 'singing-bowl'
+  | 'brass-swell'
+  | 'vowel-voice'
+  | 'reed-organ'
+  | 'fm-bell'
+  | 'gong'
+  | 'bowed-metal'
+  | 'tanpura'
+  | 'air-pad'
 
 export const GENERATED_SOURCE_IDS: readonly GeneratedSourceId[] = [
   'harmonic-string',
   'breath-choir',
   'metallic-strike',
   'noise-reed',
+  'glass-harmonica',
+  'singing-bowl',
+  'brass-swell',
+  'vowel-voice',
+  'reed-organ',
+  'fm-bell',
+  'gong',
+  'bowed-metal',
+  'tanpura',
+  'air-pad',
 ]
 
 // ---------------------------------------------------------------------------

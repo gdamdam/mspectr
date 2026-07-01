@@ -382,7 +382,39 @@ export function App() {
 
       <header className="topbar">
         <div className="topbar__brand">
-          <span className="topbar__mark" aria-hidden="true" />
+          {/* Brand mark — the "Dispersion" logo: a collimated beam strikes a
+              prism (its face the 'm' vertex) and splits into the five real
+              emission-line hues. Rendered inline so it inherits the palette
+              tokens and scales crisply. Decorative; the wordmark carries the
+              accessible name. */}
+          <svg
+            className="topbar__mark"
+            viewBox="0 0 128 128"
+            width="30"
+            height="30"
+            aria-hidden="true"
+            focusable="false"
+          >
+            {/* incoming white beam */}
+            <line x1="8" y1="70" x2="48" y2="70" stroke="var(--text)" strokeWidth="5" strokeLinecap="round" />
+            {/* the prism */}
+            <path
+              d="M54 40 L84 108 L24 108 Z"
+              fill="var(--text)"
+              fillOpacity="0.06"
+              stroke="var(--text)"
+              strokeWidth="4"
+              strokeLinejoin="round"
+            />
+            {/* dispersed emission bands — discrete, calibrated, not a rainbow */}
+            <g strokeWidth="5" strokeLinecap="round">
+              <line x1="80" y1="90" x2="118" y2="56" stroke="var(--violet)" />
+              <line x1="81" y1="93" x2="120" y2="69" stroke="var(--cyan)" />
+              <line x1="82" y1="96" x2="121" y2="82" stroke="var(--green)" />
+              <line x1="82" y1="99" x2="120" y2="95" stroke="var(--amber)" />
+              <line x1="81" y1="102" x2="118" y2="108" stroke="var(--magenta)" />
+            </g>
+          </svg>
           <span className="topbar__name">
             mspectr<sup className="topbar__version">v{__APP_VERSION__}</sup>
           </span>

@@ -1,5 +1,5 @@
 /**
- * Authored preset library for mspectr — 10 curated spectral scenes.
+ * Authored preset library for mspectr — a curated set of spectral scenes.
  *
  * Each Preset is a complete, valid object: a full SpectralPatch (which passes
  * sanitizePatch with no change of meaning), one of the four built-in
@@ -462,6 +462,499 @@ export const PRESETS: Preset[] = [
       macros: macros({ body: 0.85, motion: 0.3, harmony: 0.7, space: 0.9 }),
       macroLinks: LINK_ALL,
       xy: { x: 0.7, y: 0.6 },
+    }),
+  },
+
+  // ---- Demo presets — each spotlights a capability of the instrument. -------
+
+  // 11 — Living Pluck: LIVING capture + phase-lock. Hear a string's attack and
+  //      decay captured alive, played clean. XY sweeps the inharmonic SHIFT.
+  {
+    id: 'living-pluck',
+    name: 'Living Pluck',
+    hint: 'Capture (Living) a string: its pluck and decay play back alive. Sweep X to bend it inharmonic.',
+    group: 'Living',
+    source: 'harmonic-string',
+    captureStrategy: 'evolving',
+    calibrationDb: -2,
+    xyMapping: { x: { param: 'shift', min: -12, max: 12 }, y: { param: 'blur', min: 0, max: 0.5 } },
+    patch: patch('living-pluck', {
+      scale: 'major',
+      seed: 0x11a1,
+      params: params({
+        freeze: false,
+        freezePhase: 'lock',
+        tilt: 0.4,
+        blur: 0.05,
+        phaseMotion: 0,
+        attack: 0.004,
+        decay: 0.5,
+        sustain: 0.35,
+        release: 0.7,
+        reverbAmount: 0.15,
+        earlyReflections: 0.2,
+        stereoWidth: 0.4,
+      }),
+      macros: macros({ body: 0.7, motion: 0.05, harmony: 0, space: 0.2 }),
+      macroLinks: links({}),
+      xy: { x: 0.5, y: 0.1 },
+    }),
+  },
+
+  // 12 — Harmonic Cloud: HARMONIZE + spectral MOTION. A shimmering stack of
+  //      octave/fifth voices that drifts and breathes (animated phase).
+  {
+    id: 'harmonic-cloud',
+    name: 'Harmonic Cloud',
+    hint: 'A shimmering harmonized cloud that drifts and breathes. Ride MOTION and HARMONY.',
+    group: 'Living',
+    source: 'harmonic-string',
+    captureStrategy: 'evolving',
+    calibrationDb: -4,
+    xyMapping: { x: { param: 'harmonyMix', min: 0, max: 0.9 }, y: { param: 'phaseMotion', min: 0.1, max: 1 } },
+    patch: patch('harmonic-cloud', {
+      scale: 'pentatonic',
+      seed: 0x11c2,
+      params: params({
+        freeze: false,
+        freezePhase: 'animate',
+        tilt: 0.1,
+        blur: 0.35,
+        phaseMotion: 0.7,
+        harmonyVoices: 4,
+        harmonyInterval: 'shimmer',
+        harmonyMix: 0.7,
+        attack: 0.6,
+        release: 3,
+        reverbAmount: 0.6,
+        earlyReflections: 0.5,
+        diffusion: 0.6,
+        stereoWidth: 0.9,
+      }),
+      macros: macros({ body: 0.5, motion: 0.7, harmony: 0.8, space: 0.6 }),
+      macroLinks: links({ motion: true, harmony: true }),
+      xy: { x: 0.6, y: 0.6 },
+    }),
+  },
+
+  // 13 — Tidal Breath: spectral MOTION as the star. Breath that swells and
+  //      recedes — the whole spectrum in slow motion (MOTION macro linked high).
+  {
+    id: 'tidal-breath',
+    name: 'Tidal Breath',
+    hint: 'Breath that swells and recedes — the spectrum itself in motion. Push MOTION.',
+    group: 'Living',
+    source: 'breath-choir',
+    captureStrategy: 'evolving',
+    calibrationDb: -3,
+    xyMapping: { x: { param: 'formant', min: -6, max: 6 }, y: { param: 'blur', min: 0.1, max: 0.7 } },
+    patch: patch('tidal-breath', {
+      scale: 'dorian',
+      seed: 0x11d3,
+      params: params({
+        freeze: false,
+        freezePhase: 'animate',
+        tilt: 0,
+        blur: 0.4,
+        phaseMotion: 0.85,
+        attack: 1,
+        release: 4,
+        reverbAmount: 0.7,
+        earlyReflections: 0.55,
+        diffusion: 0.7,
+        stereoWidth: 0.95,
+      }),
+      macros: macros({ body: 0.45, motion: 0.85, harmony: 0.2, space: 0.7 }),
+      macroLinks: links({ motion: true, space: true }),
+      xy: { x: 0.5, y: 0.5 },
+    }),
+  },
+
+  // 14 — Iron Harmony: HARMONIZE on struck metal. Bells ringing in stacked
+  //      fifths, phase-locked so the partials stay clear.
+  {
+    id: 'iron-harmony',
+    name: 'Iron Harmony',
+    hint: 'Struck metal ringing in stacked fifths, phase-locked and clear.',
+    group: 'Metallic',
+    source: 'metallic-strike',
+    captureStrategy: 'evolving',
+    calibrationDb: -3,
+    xyMapping: { x: { param: 'shift', min: -12, max: 12 }, y: { param: 'harmonyMix', min: 0, max: 0.9 } },
+    patch: patch('iron-harmony', {
+      scale: 'minor',
+      seed: 0x11e4,
+      params: params({
+        freeze: false,
+        freezePhase: 'lock',
+        tilt: 0.3,
+        formant: 3,
+        blur: 0.03,
+        phaseMotion: 0.1,
+        harmonyVoices: 3,
+        harmonyInterval: 'fifths',
+        harmonyMix: 0.6,
+        attack: 0.01,
+        decay: 1.2,
+        sustain: 0.5,
+        release: 2,
+        reverbAmount: 0.4,
+        stereoWidth: 0.6,
+      }),
+      macros: macros({ body: 0.6, motion: 0.1, harmony: 0.6, space: 0.4 }),
+      macroLinks: links({ harmony: true }),
+      xy: { x: 0.5, y: 0.55 },
+    }),
+  },
+
+  // 15 — Morph Study: A/B MORPH. Capture A and B, then sweep X to glide between
+  //      two spectra through their interpolated envelope.
+  {
+    id: 'morph-study',
+    name: 'Morph Study',
+    hint: 'Capture into A and B, then sweep X to morph between the two spectra.',
+    group: 'Living',
+    source: 'harmonic-string',
+    captureStrategy: 'evolving',
+    calibrationDb: -2,
+    xyMapping: { x: { param: 'morph', min: 0, max: 1 }, y: { param: 'tilt', min: -0.6, max: 0.6 } },
+    patch: patch('morph-study', {
+      scale: 'mixolydian',
+      seed: 0x11f5,
+      params: params({
+        freeze: false,
+        freezePhase: 'animate',
+        morph: 0.5,
+        tilt: 0.2,
+        blur: 0.1,
+        phaseMotion: 0.2,
+        attack: 0.2,
+        release: 1.5,
+        reverbAmount: 0.3,
+        stereoWidth: 0.6,
+      }),
+      macros: macros({ body: 0.55, motion: 0.25, harmony: 0.1, space: 0.35 }),
+      macroLinks: links({}),
+      xy: { x: 0.5, y: 0.6 },
+    }),
+  },
+
+  // 16 — Spectral Shift: LIVING capture whose XClick bends the whole spectrum
+  //      inharmonic (x→shift). Bright major-triad stack, animated so the shifted
+  //      partials keep breathing. Showcases the SHIFT gesture end-to-end.
+  {
+    id: 'spectral-shift',
+    name: 'Spectral Shift',
+    hint: 'Living capture bent inharmonic — sweep X to slide the whole spectrum off its harmonics.',
+    group: 'Living',
+    source: 'harmonic-string',
+    captureStrategy: 'evolving',
+    calibrationDb: -3,
+    xyMapping: { x: { param: 'shift', min: -12, max: 12 }, y: { param: 'formant', min: -7, max: 7 } },
+    patch: patch('spectral-shift', {
+      scale: 'major',
+      seed: 0x5417,
+      params: params({
+        freeze: false,
+        freezePhase: 'animate',
+        shift: 5, // baseline already nudged off-harmonic
+        tilt: 0.5,
+        formant: 2,
+        blur: 0.08,
+        phaseMotion: 0.3,
+        harmonyVoices: 3,
+        harmonyInterval: 'major-triad',
+        harmonyMix: 0.45,
+        attack: 0.05,
+        decay: 0.6,
+        sustain: 0.5,
+        release: 1.4,
+        reverbAmount: 0.35,
+        earlyReflections: 0.4,
+        diffusion: 0.45,
+        stereoWidth: 0.7,
+      }),
+      macros: macros({ body: 0.6, motion: 0.3, harmony: 0.45, space: 0.35 }),
+      macroLinks: links({ harmony: true }),
+      xy: { x: 0.7, y: 0.5 },
+    }),
+  },
+
+  // 17 — Glass Gate: metallic strike under a HARD spectral GATE — only the loudest
+  //      partials survive, so it stutters into sparse glassy pings. XY rides the
+  //      gate threshold. Showcases the spectral GATE at high values.
+  {
+    id: 'glass-gate',
+    name: 'Glass Gate',
+    hint: 'A hard spectral gate carves struck metal into sparse glassy pings — ride Y to open it.',
+    group: 'Metallic',
+    source: 'metallic-strike',
+    captureStrategy: 'evolving',
+    calibrationDb: -4,
+    xyMapping: { x: { param: 'formant', min: -7, max: 7 }, y: { param: 'gate', min: 0.1, max: 0.8 } },
+    patch: patch('glass-gate', {
+      scale: 'chromatic',
+      seed: 0x61a7,
+      octave: 1,
+      params: params({
+        freeze: false,
+        freezePhase: 'lock',
+        tilt: 0.55,
+        formant: 5,
+        blur: 0.0,
+        gate: 0.55, // strong gate — reserved high end of the gate range
+        phaseMotion: 0.15,
+        harmonyVoices: 2,
+        harmonyInterval: 'shimmer',
+        harmonyMix: 0.35,
+        attack: 0.001,
+        decay: 0.4,
+        sustain: 0.25,
+        release: 1.5,
+        reverbAmount: 0.45,
+        earlyReflections: 0.5,
+        diffusion: 0.35,
+        stereoWidth: 0.85,
+      }),
+      macros: macros({ body: 0.7, motion: 0.15, harmony: 0.35, space: 0.45 }),
+      macroLinks: links({ space: true }),
+      xy: { x: 0.5, y: 0.5 },
+    }),
+  },
+
+  // 18 — Formant Choir: LIVING breath-choir with the XY sweeping FORMANT across
+  //      its full range — vowels morph a↔i↔u under the hand. Bright, shimmering,
+  //      wide. Showcases the FORMANT sweep on the vocal source.
+  {
+    id: 'formant-choir',
+    name: 'Formant Choir',
+    hint: 'A living choir whose vowel morphs under your hand — sweep X to slide the formant a↔i↔u.',
+    group: 'Living',
+    source: 'breath-choir',
+    captureStrategy: 'evolving',
+    calibrationDb: -3,
+    xyMapping: { x: { param: 'formant', min: -12, max: 12 }, y: { param: 'harmonyMix', min: 0, max: 0.85 } },
+    patch: patch('formant-choir', {
+      scale: 'major',
+      seed: 0xf0c8,
+      params: params({
+        freeze: false,
+        freezePhase: 'animate',
+        tilt: 0.45,
+        formant: 1,
+        blur: 0.18,
+        phaseMotion: 0.4,
+        harmonyVoices: 3,
+        harmonyInterval: 'shimmer',
+        harmonyMix: 0.5,
+        attack: 0.7,
+        release: 3,
+        reverbAmount: 0.55,
+        earlyReflections: 0.5,
+        diffusion: 0.6,
+        stereoWidth: 0.9,
+      }),
+      macros: macros({ body: 0.5, motion: 0.4, harmony: 0.6, space: 0.55 }),
+      macroLinks: links({ motion: true, harmony: true }),
+      xy: { x: 0.5, y: 0.55 },
+    }),
+  },
+
+  // 19 — Cluster Reed: LIVING noise-reed ground into a dense CLUSTER stack under
+  //      heavy phase MOTION — a churning dissonant swarm. Showcases cluster
+  //      harmony plus strong MOTION on the noisiest source.
+  {
+    id: 'cluster-reed',
+    name: 'Cluster Reed',
+    hint: 'A living reed ground into a churning cluster swarm — push MOTION to set the partials boiling.',
+    group: 'Textural',
+    source: 'noise-reed',
+    captureStrategy: 'evolving',
+    calibrationDb: -1,
+    xyMapping: { x: { param: 'blur', min: 0, max: 0.8 }, y: { param: 'phaseMotion', min: 0.2, max: 1 } },
+    patch: patch('cluster-reed', {
+      scale: 'dorian',
+      seed: 0xc1ee,
+      params: params({
+        freeze: false,
+        freezePhase: 'animate',
+        tilt: -0.15,
+        formant: -2,
+        blur: 0.25,
+        gate: 0.2,
+        phaseMotion: 0.9, // boiling churn
+        harmonyVoices: 3,
+        harmonyInterval: 'cluster',
+        harmonyMix: 0.55,
+        attack: 0.1,
+        release: 1,
+        reverbAmount: 0.3,
+        earlyReflections: 0.35,
+        diffusion: 0.55,
+        stereoWidth: 0.6,
+      }),
+      macros: macros({ body: 0.4, motion: 0.9, harmony: 0.55, space: 0.3 }),
+      macroLinks: links({ motion: true, harmony: true }),
+      xy: { x: 0.3, y: 0.8 },
+    }),
+  },
+
+  // 20 — Morph Veil: A/B MORPH on the breath-choir. Capture two vowels, then
+  //      sweep X to glide between them through a diffuse veil. Distinct from
+  //      Morph Study (different source, harmony, scale, motion).
+  {
+    id: 'morph-veil',
+    name: 'Morph Veil',
+    hint: 'Capture two breath vowels into A and B, then sweep X to morph across a diffuse veil.',
+    group: 'Living',
+    source: 'breath-choir',
+    captureStrategy: 'evolving',
+    calibrationDb: -3,
+    xyMapping: { x: { param: 'morph', min: 0, max: 1 }, y: { param: 'blur', min: 0.1, max: 0.7 } },
+    patch: patch('morph-veil', {
+      scale: 'minor',
+      seed: 0x707e,
+      params: params({
+        freeze: false,
+        freezePhase: 'animate',
+        morph: 0.5,
+        tilt: -0.1,
+        formant: -1,
+        blur: 0.3,
+        phaseMotion: 0.45,
+        harmonyVoices: 2,
+        harmonyInterval: 'major-triad',
+        harmonyMix: 0.4,
+        attack: 0.9,
+        release: 3.5,
+        reverbAmount: 0.65,
+        earlyReflections: 0.5,
+        diffusion: 0.65,
+        stereoWidth: 0.9,
+      }),
+      macros: macros({ body: 0.45, motion: 0.45, harmony: 0.4, space: 0.65 }),
+      macroLinks: links({ space: true }),
+      xy: { x: 0.5, y: 0.5 },
+    }),
+  },
+
+  // 21 — Black Ember: the DARK extreme. Metallic strike crushed to the bottom
+  //      (tilt -0.9) with formants pulled down and a spectral gate — a smouldering,
+  //      subterranean clang. Anchors the dark end of the tilt range.
+  {
+    id: 'black-ember',
+    name: 'Black Ember',
+    hint: 'Struck metal crushed to its darkest ember — a smouldering, subterranean clang.',
+    group: 'Metallic',
+    source: 'metallic-strike',
+    captureStrategy: 'average',
+    calibrationDb: -2,
+    xyMapping: { x: { param: 'tilt', min: -1, max: 0 }, y: { param: 'gate', min: 0, max: 0.6 } },
+    patch: patch('black-ember', {
+      scale: 'minor',
+      seed: 0xb1ac,
+      octave: -1,
+      params: params({
+        freeze: false,
+        freezePhase: 'lock',
+        tilt: -0.9, // darkest preset in the library
+        formant: -7,
+        blur: 0.05,
+        gate: 0.25,
+        phaseMotion: 0.15,
+        harmonyVoices: 1,
+        harmonyInterval: 'fifths',
+        harmonyMix: 0.3,
+        attack: 0.003,
+        decay: 1,
+        sustain: 0.4,
+        release: 2.5,
+        reverbAmount: 0.3,
+        earlyReflections: 0.35,
+        diffusion: 0.4,
+        stereoWidth: 0.55,
+      }),
+      macros: macros({ body: 0.7, motion: 0.15, harmony: 0.3, space: 0.3 }),
+      macroLinks: links({ body: true }),
+      xy: { x: 0.3, y: 0.4 },
+    }),
+  },
+
+  // 22 — Shimmer Rise: LIVING harmonic string with an animated SHIMMER stack that
+  //      climbs in bright octave/twelfth overtones. XY slides the whole thing in
+  //      inharmonic shift. Airy, ascending, wide.
+  {
+    id: 'shimmer-rise',
+    name: 'Shimmer Rise',
+    hint: 'A living string climbing into bright shimmering overtones — sweep X to lift it inharmonic.',
+    group: 'Living',
+    source: 'harmonic-string',
+    captureStrategy: 'evolving',
+    calibrationDb: -4,
+    xyMapping: { x: { param: 'shift', min: 0, max: 12 }, y: { param: 'reverbAmount', min: 0.2, max: 0.8 } },
+    patch: patch('shimmer-rise', {
+      scale: 'mixolydian',
+      seed: 0x51e2,
+      octave: 1,
+      params: params({
+        freeze: false,
+        freezePhase: 'animate',
+        shift: 3,
+        tilt: 0.65,
+        formant: 6,
+        blur: 0.12,
+        phaseMotion: 0.5,
+        harmonyVoices: 4,
+        harmonyInterval: 'shimmer',
+        harmonyMix: 0.6,
+        attack: 0.3,
+        release: 2.8,
+        reverbAmount: 0.55,
+        earlyReflections: 0.55,
+        diffusion: 0.5,
+        stereoWidth: 0.95,
+      }),
+      macros: macros({ body: 0.6, motion: 0.5, harmony: 0.6, space: 0.55 }),
+      macroLinks: links({ motion: true, harmony: true, space: true }),
+      xy: { x: 0.25, y: 0.5 },
+    }),
+  },
+
+  // 23 — Locked Prism: phase-LOCK stillness as the star. A frozen harmonic string
+  //      held dead-still, split into a bright minor-triad prism, then thrown into
+  //      a huge space. Contrast to the animated shimmer presets.
+  {
+    id: 'locked-prism',
+    name: 'Locked Prism',
+    hint: 'A phase-locked string held dead-still and split into a bright minor-triad prism.',
+    group: 'Frozen',
+    source: 'harmonic-string',
+    captureStrategy: 'average',
+    calibrationDb: -3,
+    xyMapping: { x: { param: 'harmonyMix', min: 0, max: 0.9 }, y: { param: 'reverbAmount', min: 0.2, max: 0.85 } },
+    patch: patch('locked-prism', {
+      scale: 'pentatonic',
+      seed: 0x10c9,
+      params: params({
+        freeze: true,
+        freezePhase: 'lock', // dead-still, phase-locked
+        tilt: 0.75,
+        formant: 5,
+        blur: 0.08,
+        phaseMotion: 0.02, // near-zero — distinct from every animated preset
+        harmonyVoices: 3,
+        harmonyInterval: 'minor-triad',
+        harmonyMix: 0.55,
+        attack: 0.6,
+        release: 4,
+        reverbAmount: 0.65,
+        earlyReflections: 0.6,
+        diffusion: 0.6,
+        stereoWidth: 0.9,
+      }),
+      macros: macros({ body: 0.65, motion: 0.02, harmony: 0.55, space: 0.65 }),
+      macroLinks: links({ harmony: true, space: true }),
+      xy: { x: 0.5, y: 0.5 },
     }),
   },
 ]

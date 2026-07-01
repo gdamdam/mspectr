@@ -41,6 +41,16 @@ const SOURCE_SEEDS: Record<GeneratedSourceId, number> = {
   'breath-choir': 0x85ebca77,
   'metallic-strike': 0xc2b2ae3d,
   'noise-reed': 0x27d4eb2f,
+  'glass-harmonica': 0x165667b1,
+  'singing-bowl': 0xd3a2646d,
+  'brass-swell': 0xfd7046c5,
+  'vowel-voice': 0xb55a4f09,
+  'reed-organ': 0x1b873593,
+  'fm-bell': 0xcc9e2d51,
+  gong: 0xa2b8d3f1,
+  'bowed-metal': 0x7feb352d,
+  tanpura: 0x846ca68b,
+  'air-pad': 0xff51afd7,
 }
 
 const SOURCE_LABELS: Record<GeneratedSourceId, string> = {
@@ -48,6 +58,16 @@ const SOURCE_LABELS: Record<GeneratedSourceId, string> = {
   'breath-choir': 'Breath Choir',
   'metallic-strike': 'Metallic Strike',
   'noise-reed': 'Noise Reed',
+  'glass-harmonica': 'Glass Harmonica',
+  'singing-bowl': 'Singing Bowl',
+  'brass-swell': 'Brass Swell',
+  'vowel-voice': 'Vowel Voice',
+  'reed-organ': 'Reed Organ',
+  'fm-bell': 'FM Bell',
+  gong: 'Gong',
+  'bowed-metal': 'Bowed Metal',
+  tanpura: 'Tanpura',
+  'air-pad': 'Air Pad',
 }
 
 /** Default rendered length per source (seconds). Loopable as-is. */
@@ -56,6 +76,16 @@ const SOURCE_SECONDS: Record<GeneratedSourceId, number> = {
   'breath-choir': 6,
   'metallic-strike': 4,
   'noise-reed': 4,
+  'glass-harmonica': 6,
+  'singing-bowl': 8,
+  'brass-swell': 6,
+  'vowel-voice': 6,
+  'reed-organ': 5,
+  'fm-bell': 5,
+  gong: 8,
+  'bowed-metal': 7,
+  tanpura: 6,
+  'air-pad': 8,
 }
 
 /** Target normalisation peak (~-6 dBFS). */
@@ -344,11 +374,416 @@ function renderNoiseReed(rng: () => number, sr: number, length: number): Float32
   return data
 }
 
+/**
+ * glass-harmonica: rubbed wine glasses. Nearly-pure high sine partials (a weak,
+ * slightly-inharmonic overtone or two) with several very slow beat pairs — each
+ * partial is split into two detuned sines a fraction of a Hz apart so the whole
+ * spectrum shimmers and slowly breathes. Very tonal, bright, glassy.
+ */
+function renderGlassHarmonica(rng: () => number, sr: number, length: number): Float32Array {
+  const data = new Float32Array(length)
+  const fundamental = 660 // ~E5 — high and pure
+  // Glass rings almost sinusoidally; a couple of weak, slightly stretched overtones.
+  const partials = [
+    { ratio: 1.0, g: 1.0 },
+    { ratio: 2.005, g: 0.28 },
+    { ratio: 3.02, g: 0.12 },
+    { ratio: 4.04, g: 0.05 },
+  ]
+  const n = partials.length
+  const phaseA = new Float32Array(n)
+  const phaseB = new Float32Array(n)
+  const beatHz = new Float32Array(n)
+  for (let h = 0; h < n; h++) {
+    phaseA[h] = rng() * TWO_PI
+    phaseB[h] = rng() * TWO_PI
+    // Sub-Hz beating between the two halves of each partial → slow shimmer.
+    beatHz[h] = 0.15 + rng() * 0.55
+  }
+  for (let i = 0; i < length; i++) {
+    const t = i / sr
+    // Very gentle overall breathing as the finger pressure varies.
+    const swell = 0.88 + 0.12 * Math.sin(TWO_PI * 0.08 * t)
+    let sample = 0
+    for (let h = 0; h < n; h++) {
+      const f = fundamental * partials[h].ratio
+      const a = Math.sin(TWO_PI * f * t + phaseA[h])
+      const b = Math.sin(TWO_PI * (f + beatHz[h]) * t + phaseB[h])
+      sample += partials[h].g * (a + b) * 0.5
+    }
+    data[i] = sample * swell
+  }
+  return data
+}
+
+/**
+ * singing-bowl: a struck/sustained metal bowl. A low fundamental plus a handful
+ * of INHARMONIC partials (bell-like non-integer ratios), each split into a close
+ * beating pair so the partials audibly beat against one another with a long, slow
+ * evolution. Low centroid, tonal-but-metallic — clearly distinct from the higher,
+ * purer glass and the harmonic string.
+ */
+function renderSingingBowl(rng: () => number, sr: number, length: number): Float32Array {
+  const data = new Float32Array(length)
+  const base = 196 // ~G3 low bowl fundamental
+  // Inharmonic bowl modes (not a harmonic series) — a few, richly beating.
+  const modes = [
+    { ratio: 1.0, g: 1.0, beat: 0.5 },
+    { ratio: 2.71, g: 0.55, beat: 0.9 },
+    { ratio: 5.18, g: 0.35, beat: 1.4 },
+    { ratio: 8.61, g: 0.18, beat: 2.1 },
+  ]
+  const n = modes.length
+  const phaseA = new Float32Array(n)
+  const phaseB = new Float32Array(n)
+  const depth = new Float32Array(n)
+  for (let h = 0; h < n; h++) {
+    phaseA[h] = rng() * TWO_PI
+    phaseB[h] = rng() * TWO_PI
+    depth[h] = 0.6 + rng() * 0.4 // per-mode beat depth
+  }
+  for (let i = 0; i < length; i++) {
+    const t = i / sr
+    // Slow overall evolution as the bowl energy redistributes.
+    const swell = 0.8 + 0.2 * Math.sin(TWO_PI * 0.05 * t - Math.PI / 3)
+    let sample = 0
+    for (let h = 0; h < n; h++) {
+      const f = base * modes[h].ratio
+      // Amplitude beating from the interference of the two close partials.
+      const beatAmp = 1 - depth[h] * 0.5 * (1 - Math.cos(TWO_PI * modes[h].beat * t))
+      const a = Math.sin(TWO_PI * f * t + phaseA[h])
+      const b = Math.sin(TWO_PI * (f + modes[h].beat) * t + phaseB[h])
+      sample += modes[h].g * beatAmp * (a + b) * 0.5
+    }
+    data[i] = sample * swell
+  }
+  return data
+}
+
+/**
+ * brass-swell: a rich harmonic brass tone. Many strong harmonics whose relative
+ * balance is driven by a slowly-swelling bright formant that sweeps up the series
+ * (as brass brightens when it gets louder), so the timbre morphs over the loop.
+ * Fully harmonic → great for harmonize/pitch, with a moving centroid.
+ */
+function renderBrassSwell(rng: () => number, sr: number, length: number): Float32Array {
+  const data = new Float32Array(length)
+  const fundamental = 147 // ~D3 — brassy low-mid
+  const partials = 20
+  const phase = new Float32Array(partials)
+  const detune = new Float32Array(partials)
+  for (let h = 0; h < partials; h++) {
+    phase[h] = rng() * TWO_PI
+    detune[h] = 1 + (rng() * 2 - 1) * 0.0008 // tiny ensemble spread
+  }
+  const swellHz = 0.12
+  for (let i = 0; i < length; i++) {
+    const t = i / sr
+    // Slow crescendo; brightness (formant centre partial) tracks the swell.
+    const swell = 0.6 + 0.4 * (0.5 - 0.5 * Math.cos(TWO_PI * swellHz * t))
+    const formantCenter = 3 + 9 * swell // moves from ~3rd to ~12th partial
+    const formantWidth = 5
+    const vib = 1 + 0.004 * Math.sin(TWO_PI * 5.2 * t)
+    let sample = 0
+    for (let h = 0; h < partials; h++) {
+      const nn = h + 1
+      const freq = fundamental * nn * detune[h] * vib
+      // 1/n base plus a broad moving brightness bump → sweeping bright formant.
+      const bump = Math.exp(-((nn - formantCenter) * (nn - formantCenter)) / (2 * formantWidth * formantWidth))
+      const amp = (1 / nn) * (0.4 + 1.6 * bump)
+      sample += amp * Math.sin(TWO_PI * freq * t + phase[h])
+    }
+    data[i] = sample * swell
+  }
+  return data
+}
+
+/**
+ * vowel-voice: a sung vowel. A buzzy band-limited glottal pulse (rich harmonic
+ * source) driven through 3–4 resonant vocal FORMANTS whose centre frequencies
+ * slowly morph between an "aah" and an "ooh", so the spectral envelope moves while
+ * the pitch stays fixed. Formant-rich — ideal for the formant control.
+ */
+function renderVowelVoice(rng: () => number, sr: number, length: number): Float32Array {
+  const data = new Float32Array(length)
+  const fundamental = 174 // ~F3 sung pitch
+  // Formant targets: aah (open) ↔ ooh (rounded). [F1..F4] in Hz.
+  const aah = [800, 1150, 2900, 3900]
+  const ooh = [325, 700, 2530, 3500]
+  const gains = [1.0, 0.7, 0.35, 0.2]
+  const qs = [10, 11, 12, 12]
+  const nf = gains.length
+  const filters = aah.map((_, k) => makeBandpass(sr, aah[k], qs[k]))
+  // Precompute the buzzy glottal drive as a band-limited sum of harmonics.
+  const nHarm = 30
+  const phase = new Float32Array(nHarm)
+  for (let h = 0; h < nHarm; h++) phase[h] = rng() * TWO_PI
+  const morphHz = 0.11
+  const vibHz = 5.0
+  for (let i = 0; i < length; i++) {
+    const t = i / sr
+    const vib = 1 + 0.005 * Math.sin(TWO_PI * vibHz * t)
+    // Glottal-ish drive: -6 dB/oct harmonic series (1/n) → buzzy but not harsh.
+    let drive = 0
+    for (let h = 1; h <= nHarm; h++) {
+      drive += Math.sin(TWO_PI * fundamental * h * vib * t + phase[h - 1]) / h
+    }
+    // Slowly morph formant centres aah↔ooh. Recreate filters only occasionally
+    // would drift state; instead we drive fixed filters but blend two vowel taps.
+    const m = 0.5 - 0.5 * Math.cos(TWO_PI * morphHz * t) // 0..1 aah→ooh→aah
+    let sample = 0
+    for (let k = 0; k < nf; k++) {
+      const center = aah[k] + (ooh[k] - aah[k]) * m
+      // Re-tune a lightweight resonator by weighting the fixed band-pass output
+      // with a Gaussian around the moving centre (cheap moving-formant emphasis).
+      const y = filters[k](drive)
+      const closeness = Math.exp(-((center - aah[k]) * (center - aah[k])) / (2 * 400 * 400))
+      sample += y * gains[k] * (0.5 + 0.5 * closeness)
+    }
+    const breath = 0.9 + 0.1 * Math.sin(TWO_PI * 0.3 * t)
+    data[i] = sample * breath
+  }
+  return data
+}
+
+/**
+ * reed-organ: harmonium / pump-organ. A dense sustained tone with strong odd AND
+ * even harmonics (square-ish + saw blend), lightly detuned across two ranks for a
+ * reedy chorus, with a gentle tremolo. Mid centroid, thick and stable.
+ */
+function renderReedOrgan(rng: () => number, sr: number, length: number): Float32Array {
+  const data = new Float32Array(length)
+  const fundamental = 220 // ~A3
+  const nHarm = 18
+  const phaseA = new Float32Array(nHarm)
+  const phaseB = new Float32Array(nHarm)
+  const amp = new Float32Array(nHarm)
+  for (let h = 0; h < nHarm; h++) {
+    const nn = h + 1
+    phaseA[h] = rng() * TWO_PI
+    phaseB[h] = rng() * TWO_PI
+    // Dense odd+even content: gentle roll-off with a reedy mid emphasis.
+    const reed = 1 + 0.6 * Math.exp(-((nn - 5) * (nn - 5)) / 18)
+    amp[h] = (1 / Math.sqrt(nn)) * reed
+  }
+  const detune = 1.004 // second rank slightly sharp → reedy chorus
+  const tremHz = 4.2
+  for (let i = 0; i < length; i++) {
+    const t = i / sr
+    const trem = 0.9 + 0.1 * Math.sin(TWO_PI * tremHz * t)
+    let sample = 0
+    for (let h = 0; h < nHarm; h++) {
+      const nn = h + 1
+      const f = fundamental * nn
+      sample += amp[h] * Math.sin(TWO_PI * f * t + phaseA[h])
+      sample += amp[h] * 0.8 * Math.sin(TWO_PI * f * detune * t + phaseB[h])
+    }
+    data[i] = sample * trem
+  }
+  return data
+}
+
+/**
+ * fm-bell: a clangorous FM bell. A single carrier/modulator FM pair with a
+ * non-integer modulation ratio produces inharmonic sidebands; a slowly decaying
+ * modulation index makes the metallic sheen bloom then settle, re-struck across
+ * the loop. Dense inharmonic partials → great for spectral shift.
+ */
+function renderFmBell(rng: () => number, sr: number, length: number): Float32Array {
+  const data = new Float32Array(length)
+  const carrier = 392 // ~G4
+  const modRatio = 1.414 // irrational-ish → inharmonic sidebands
+  const modFreq = carrier * modRatio
+  const cPhase = rng() * TWO_PI
+  const mPhase = rng() * TWO_PI
+  const strikes = 2
+  const strikeLen = length / strikes
+  for (let i = 0; i < length; i++) {
+    const t = i / sr
+    const tInStrike = (i % strikeLen) / sr
+    // Modulation index decays from a bright clang to a purer ring.
+    const index = 6 * Math.exp(-tInStrike * 1.2)
+    const env = Math.exp(-tInStrike * 1.6)
+    const mod = index * Math.sin(TWO_PI * modFreq * t + mPhase)
+    const sample = env * Math.sin(TWO_PI * carrier * t + cPhase + mod)
+    const attack = 1 - Math.exp(-tInStrike * 1500)
+    data[i] = sample * attack
+  }
+  return data
+}
+
+/**
+ * gong: a tam-tam wash. Dense inharmonic energy spread broadly across the
+ * spectrum — many closely-spaced randomly-detuned partials plus filtered noise —
+ * with a slow build-and-shimmer as high modes bloom over time. Bright, dense,
+ * broadband and evolving.
+ */
+function renderGong(rng: () => number, sr: number, length: number): Float32Array {
+  const data = new Float32Array(length)
+  const base = 110 // low anchor; energy spreads far above it
+  const nModes = 48
+  const freq = new Float32Array(nModes)
+  const phase = new Float32Array(nModes)
+  const gain = new Float32Array(nModes)
+  const bloomHz = new Float32Array(nModes)
+  for (let h = 0; h < nModes; h++) {
+    // Dense, irregular inharmonic spread from ~base up to several kHz.
+    freq[h] = base * (1 + h * 0.9 + rng() * 0.7)
+    phase[h] = rng() * TWO_PI
+    gain[h] = (0.5 + rng() * 0.5) / Math.sqrt(h + 1)
+    // Each mode shimmers on its own slow LFO → wash never sits still.
+    bloomHz[h] = 0.05 + rng() * 0.4
+  }
+  // Broadband metallic noise bed via a high band-pass.
+  const noiseBp = makeBandpass(sr, 3200, 1.1)
+  for (let k = 0; k < 256; k++) noiseBp(rng() * 2 - 1)
+  for (let i = 0; i < length; i++) {
+    const t = i / sr
+    // Slow overall build then sustain-shimmer over the loop.
+    const build = 0.55 + 0.45 * (0.5 - 0.5 * Math.cos(TWO_PI * 0.06 * t))
+    let sample = 0
+    for (let h = 0; h < nModes; h++) {
+      const shimmer = 0.6 + 0.4 * Math.sin(TWO_PI * bloomHz[h] * t + phase[h])
+      sample += gain[h] * shimmer * Math.sin(TWO_PI * freq[h] * t + phase[h])
+    }
+    sample += noiseBp(rng() * 2 - 1) * 0.6
+    data[i] = sample * build
+  }
+  return data
+}
+
+/**
+ * bowed-metal: a bowed cymbal / metal plate. An eerie evolving inharmonic sustain
+ * where upper overtones slowly RISE in amplitude over the loop (as sustained
+ * bowing excites higher modes), so the centroid climbs and the timbre grows
+ * brighter and more shrill. Inharmonic ratios keep it clearly non-tonal.
+ */
+function renderBowedMetal(rng: () => number, sr: number, length: number): Float32Array {
+  const data = new Float32Array(length)
+  const base = 233 // ~Bb3
+  // Inharmonic plate/cymbal ratios, biased toward the upper spectrum.
+  const ratios = [1.0, 2.41, 3.83, 5.29, 7.12, 9.4, 12.1, 15.3]
+  const n = ratios.length
+  const phase = new Float32Array(n)
+  const beat = new Float32Array(n)
+  for (let h = 0; h < n; h++) {
+    phase[h] = rng() * TWO_PI
+    beat[h] = 0.3 + rng() * 1.2 // slow amplitude beating per mode
+  }
+  const riseHz = 0.07
+  for (let i = 0; i < length; i++) {
+    const t = i / sr
+    // Upper overtones rise over the loop → climbing brightness.
+    const rise = 0.5 - 0.5 * Math.cos(TWO_PI * riseHz * t)
+    let sample = 0
+    for (let h = 0; h < n; h++) {
+      const f = base * ratios[h]
+      // Higher modes weighted more as `rise` grows → moving centroid.
+      const weight = (1 / Math.sqrt(h + 1)) * (0.4 + 1.6 * rise * (h / n))
+      const wobble = 0.7 + 0.3 * Math.sin(TWO_PI * beat[h] * t + phase[h])
+      sample += weight * wobble * Math.sin(TWO_PI * f * t + phase[h])
+    }
+    data[i] = sample
+  }
+  return data
+}
+
+/**
+ * tanpura: a sympathetic-string drone. A rich harmonic series whose upper
+ * harmonics are strongly emphasised and slowly swept by a moving resonance — the
+ * characteristic "jvari" buzz produced by the thread on the bridge. Repeatedly
+ * plucked strings overlap into a shimmering, slowly-evolving harmonic drone.
+ */
+function renderTanpura(rng: () => number, sr: number, length: number): Float32Array {
+  const data = new Float32Array(length)
+  const fundamental = 131 // ~C3 drone (Pa/Sa string)
+  const partials = 28
+  const phase = new Float32Array(partials)
+  for (let h = 0; h < partials; h++) phase[h] = rng() * TWO_PI
+  // Slowly-sweeping jvari resonance emphasising the buzzing upper harmonics.
+  const jvariHz = 0.09
+  const plucks = 4
+  const pluckLen = length / plucks
+  for (let i = 0; i < length; i++) {
+    const t = i / sr
+    const tInPluck = (i % pluckLen) / sr
+    // Each pluck decays slowly; overlapping plucks keep the drone alive.
+    const pluckEnv = 0.4 + 0.6 * Math.exp(-tInPluck * 0.9)
+    // Moving resonance centre (in harmonic index) creates the jvari sweep.
+    const resCenter = 8 + 8 * (0.5 - 0.5 * Math.cos(TWO_PI * jvariHz * t))
+    const resWidth = 6
+    let sample = 0
+    for (let h = 0; h < partials; h++) {
+      const nn = h + 1
+      const f = fundamental * nn
+      const buzz = 1 + 2.2 * Math.exp(-((nn - resCenter) * (nn - resCenter)) / (2 * resWidth * resWidth))
+      const amp = (1 / nn) * buzz
+      sample += amp * Math.sin(TWO_PI * f * t + phase[h])
+    }
+    data[i] = sample * pluckEnv
+  }
+  return data
+}
+
+/**
+ * air-pad: an airy evolving texture. Broadband noise shaped by a few resonant
+ * band-passes whose centre frequencies drift SLOWLY on independent LFOs, so a
+ * small set of tonal peaks glide through the noise — breathier than a tone but
+ * more tonal and moving than the noise-reed. Soft, wide, ambient.
+ */
+function renderAirPad(rng: () => number, sr: number, length: number): Float32Array {
+  const data = new Float32Array(length)
+  // Three moving resonant peaks. Centres sweep between lo/hi on slow LFOs.
+  const peaks = [
+    { lo: 320, hi: 520, q: 7, g: 1.0, lfoHz: 0.05, phase: rng() * TWO_PI },
+    { lo: 780, hi: 1250, q: 9, g: 0.8, lfoHz: 0.07, phase: rng() * TWO_PI },
+    { lo: 1900, hi: 3100, q: 10, g: 0.6, lfoHz: 0.04, phase: rng() * TWO_PI },
+  ]
+  // Fixed resonators driven with noise; the moving centre is emulated by blending
+  // two fixed band-passes (at lo and hi) per peak so state stays stable.
+  const bpLo = peaks.map((p) => makeBandpass(sr, p.lo, p.q))
+  const bpHi = peaks.map((p) => makeBandpass(sr, p.hi, p.q))
+  const air = makeBandpass(sr, 7000, 1.0)
+  for (let k = 0; k < 256; k++) {
+    const w = rng() * 2 - 1
+    for (let p = 0; p < peaks.length; p++) {
+      bpLo[p](w)
+      bpHi[p](w)
+    }
+    air(w)
+  }
+  for (let i = 0; i < length; i++) {
+    const t = i / sr
+    const white = rng() * 2 - 1
+    let sample = 0
+    for (let p = 0; p < peaks.length; p++) {
+      // Slow crossfade between the lo and hi resonator → a peak that glides.
+      const m = 0.5 - 0.5 * Math.cos(TWO_PI * peaks[p].lfoHz * t + peaks[p].phase)
+      const y = bpLo[p](white) * (1 - m) + bpHi[p](white) * m
+      sample += y * peaks[p].g
+    }
+    sample += air(white) * 0.3 // faint top air
+    const breath = 0.8 + 0.2 * Math.sin(TWO_PI * 0.09 * t)
+    data[i] = sample * breath
+  }
+  return data
+}
+
 const RENDERERS: Record<GeneratedSourceId, (rng: () => number, sr: number, length: number) => Float32Array> = {
   'harmonic-string': renderHarmonicString,
   'breath-choir': renderBreathChoir,
   'metallic-strike': renderMetallicStrike,
   'noise-reed': renderNoiseReed,
+  'glass-harmonica': renderGlassHarmonica,
+  'singing-bowl': renderSingingBowl,
+  'brass-swell': renderBrassSwell,
+  'vowel-voice': renderVowelVoice,
+  'reed-organ': renderReedOrgan,
+  'fm-bell': renderFmBell,
+  gong: renderGong,
+  'bowed-metal': renderBowedMetal,
+  tanpura: renderTanpura,
+  'air-pad': renderAirPad,
 }
 
 // ---------------------------------------------------------------------------
