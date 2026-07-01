@@ -17,6 +17,8 @@ function makeSnapshot(opts: { fftSize?: number; live?: boolean; withPhase?: bool
     binCount,
     analysisSampleRate: 48000,
     baseFrequency: 220,
+    frameCount: 1,
+    frameHop: fftSize / 4,
     magnitude,
     phase,
     sourceLabel: opts.live ? 'Microphone' : 'Glass Memory',

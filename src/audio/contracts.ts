@@ -27,7 +27,7 @@
 // ---------------------------------------------------------------------------
 
 export const PATCH_SCHEMA_VERSION = 1
-export const SNAPSHOT_SCHEMA_VERSION = 1
+export const SNAPSHOT_SCHEMA_VERSION = 2
 export const PRESET_SCHEMA_VERSION = 1
 export const INSTRUMENT_SCHEMA_VERSION = 1
 
@@ -43,6 +43,8 @@ export const LIMITER_CEILING_DB = -1
 export const LIVE_BUFFER_SECONDS = 4
 /** Largest FFT we will ever allocate — bounds memory for malformed snapshots. */
 export const MAX_FFT_SIZE = 8192
+/** Max frames in an evolving snapshot — bounds memory, transfer, and link size. */
+export const MAX_SNAPSHOT_FRAMES = 64
 export const MIN_FFT_SIZE = 256
 /** Number of (downsampled) bins sent to the UI for the spectral display. */
 export const DISPLAY_BINS = 256
@@ -257,13 +259,26 @@ export interface SpectralFrame {
 
 export type SnapshotSlot = 'A' | 'B'
 
-/** Capture a single instantaneous frame, or a short averaged region. */
-export type CaptureMode = 'frame' | 'average'
+/**
+ * How much of the source to capture:
+ *  - 'frame'    — a single instantaneous STFT frame (1 frame, static)
+ *  - 'average'  — one frame averaged over a short region (static, smoother)
+ *  - 'evolving' — a multi-frame region (up to MAX_SNAPSHOT_FRAMES) whose own
+ *                 spectral evolution (attack → body → decay) is replayed, so a
+ *                 pluck stays a pluck and a bell keeps ringing. This is the
+ *                 "living capture".
+ */
+export type CaptureMode = 'frame' | 'average' | 'evolving'
 
 /**
  * A captured spectral identity. Holds derived spectral data only — never the
  * source waveform. `isLiveDerived` is true when captured from microphone/tab
  * audio, which gates embedded-snapshot sharing behind explicit consent.
+ *
+ * A snapshot holds `frameCount` frames (1 = static). `magnitude` and `phase` are
+ * frame-major flattened arrays of length `frameCount * binCount`; frame f lives
+ * at [f*binCount, (f+1)*binCount). `frameHop` is the samples between successive
+ * captured frames, so playback can replay the evolution at the captured rate.
  */
 export interface SpectralSnapshot {
   schemaVersion: number
@@ -272,7 +287,13 @@ export interface SpectralSnapshot {
   analysisSampleRate: number
   /** Estimated fundamental in Hz for pitch mapping, or 0 when unpitched. */
   baseFrequency: number
+  /** Number of stored frames, 1..MAX_SNAPSHOT_FRAMES. */
+  frameCount: number
+  /** Samples between successive frames (replay speed). */
+  frameHop: number
+  /** Frame-major magnitude, length frameCount*binCount. */
   magnitude: Float32Array
+  /** Frame-major phase, length frameCount*binCount, or null. */
   phase: Float32Array | null
   sourceLabel: string
   /** Epoch ms; supplied by the caller so tests stay deterministic. */
@@ -281,8 +302,9 @@ export interface SpectralSnapshot {
 }
 
 /**
- * Wire form of a snapshot for persistence and sharing: magnitudes quantized to
- * dB bytes, optional phase quantized over [-π, π]. The codec lives in
+ * Wire form of a snapshot for persistence and sharing: per-frame magnitudes
+ * quantized to dB bytes, optional phase quantized over [-π, π]. `frames` frames
+ * are concatenated frame-major in the encoded byte arrays. The codec lives in
  * sharing/snapshotCodec.ts; this is only the shape.
  */
 export interface SerializedSnapshot {
@@ -290,10 +312,14 @@ export interface SerializedSnapshot {
   fftSize: number
   sr: number
   f0: number
-  /** Base64 of a Uint8Array, one byte per bin, quantized over [magFloorDb, 0]. */
+  /** Frame count (1 = static). */
+  frames: number
+  /** Samples between frames. */
+  frameHop: number
+  /** Base64 of a Uint8Array, frameCount*binCount bytes, quantized over [magFloorDb, 0]. */
   mag: string
   magFloorDb: number
-  /** Base64 of a Uint8Array of phase, present only when phase was stored. */
+  /** Base64 of a Uint8Array of phase (frameCount*binCount), present only when stored. */
   phase?: string
   label: string
   at: number

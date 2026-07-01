@@ -35,6 +35,8 @@ function makeSnapshot(fftSize: number): SpectralSnapshot {
     binCount,
     analysisSampleRate: 48000,
     baseFrequency: 130,
+    frameCount: 1,
+    frameHop: fftSize / 4,
     magnitude,
     phase: null,
     sourceLabel: 'studio',

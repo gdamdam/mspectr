@@ -11,16 +11,26 @@
  *  - phase (optional, radians) → byte 0..255 over [-π, π].
  *  - byte arrays are base64url encoded with no padding (URL/fragment safe).
  *
- * deserializeSnapshot is a SECURITY BOUNDARY. It validates the schema version,
- * that fftSize is a power of two within [MIN_FFT_SIZE, MAX_FFT_SIZE], that
- * binCount === fftSize/2 + 1, that the decoded magnitude byte length is exactly
- * binCount, that phase (if present) decodes to exactly binCount bytes, and that
- * every scalar is finite. It NEVER allocates an array sized by un-validated
- * input: fftSize/binCount are checked against MAX_FFT_SIZE before any Float32
- * buffer is created, and the base64 length is checked before decoding.
+ * A snapshot holds `frames` frames (1 = static). Magnitude and phase are
+ * frame-major flattened arrays of length `frames * binCount`; the encoded
+ * `mag`/`phase` byte arrays concatenate all frames in the same frame-major
+ * order. `frameHop` is the samples between successive frames (replay speed).
+ *
+ * deserializeSnapshot is a SECURITY BOUNDARY. It validates the schema version
+ * (1 or 2), that fftSize is a power of two within [MIN_FFT_SIZE, MAX_FFT_SIZE],
+ * that binCount === fftSize/2 + 1, that frames is in [1, MAX_SNAPSHOT_FRAMES],
+ * that the decoded magnitude byte length is exactly frames*binCount, that phase
+ * (if present) decodes to exactly frames*binCount bytes, and that every scalar
+ * is finite. It NEVER allocates an array sized by un-validated input: fftSize
+ * and frames are bounded before any Float32 buffer is created, and the base64
+ * length is checked before decoding.
+ *
+ * v1 rows (no `frames`/`frameHop` fields) are migrated: treated as a single
+ * frame (frames = 1) with frameHop = fftSize/4 (the STFT hop for 75% overlap).
  */
 import {
   MAX_FFT_SIZE,
+  MAX_SNAPSHOT_FRAMES,
   MIN_FFT_SIZE,
   SNAPSHOT_SCHEMA_VERSION,
   dbToGain,
@@ -116,8 +126,14 @@ function dequantizeByte(byte: number, lo: number, hi: number): number {
 export function serializeSnapshot(s: SpectralSnapshot): SerializedSnapshot {
   const floorDb = DEFAULT_MAG_FLOOR_DB
   const binCount = s.binCount
-  const mag = new Uint8Array(binCount)
-  for (let i = 0; i < binCount; i++) {
+  // frameCount is authoritative for how many frames we encode; clamp to at
+  // least 1 so a malformed in-memory snapshot still produces a valid single
+  // frame rather than an empty byte array.
+  const frameCount = Number.isInteger(s.frameCount) && s.frameCount >= 1 ? s.frameCount : 1
+  const total = frameCount * binCount
+
+  const mag = new Uint8Array(total)
+  for (let i = 0; i < total; i++) {
     // gainToDb floors at floorDb so quantizeByte's lower clamp is rarely hit,
     // but we still clamp defensively in case magnitude is negative/NaN.
     const db = gainToDb(s.magnitude[i] ?? 0, floorDb)
@@ -129,6 +145,8 @@ export function serializeSnapshot(s: SpectralSnapshot): SerializedSnapshot {
     fftSize: s.fftSize,
     sr: s.analysisSampleRate,
     f0: Number.isFinite(s.baseFrequency) ? s.baseFrequency : 0,
+    frames: frameCount,
+    frameHop: Number.isFinite(s.frameHop) ? s.frameHop : s.fftSize / 4,
     mag: bytesToBase64Url(mag),
     magFloorDb: floorDb,
     label: typeof s.sourceLabel === 'string' ? s.sourceLabel : '',
@@ -137,8 +155,8 @@ export function serializeSnapshot(s: SpectralSnapshot): SerializedSnapshot {
   }
 
   if (s.phase) {
-    const phase = new Uint8Array(binCount)
-    for (let i = 0; i < binCount; i++) {
+    const phase = new Uint8Array(total)
+    for (let i = 0; i < total; i++) {
       phase[i] = quantizeByte(s.phase[i] ?? 0, PHASE_MIN, PHASE_MAX)
     }
     out.phase = bytesToBase64Url(phase)
@@ -151,7 +169,9 @@ export function deserializeSnapshot(s: SerializedSnapshot): SpectralSnapshot {
   if (s == null || typeof s !== 'object') {
     throw new Error('deserializeSnapshot: not an object')
   }
-  if (s.v !== SNAPSHOT_SCHEMA_VERSION) {
+  // Accept the current version and v1. v1 predates multi-frame snapshots: it
+  // has no `frames`/`frameHop`, so it is migrated below to a single frame.
+  if (s.v !== SNAPSHOT_SCHEMA_VERSION && s.v !== 1) {
     throw new Error(`deserializeSnapshot: unsupported version ${String(s.v)}`)
   }
 
@@ -165,6 +185,20 @@ export function deserializeSnapshot(s: SerializedSnapshot): SpectralSnapshot {
   }
   const binCount = fftSize / 2 + 1
 
+  // Frame count & hop. v1 (no `frames`) migrates to a single frame with the
+  // standard STFT hop (fftSize/4 → 75% overlap). Validate frames BEFORE using
+  // it to size any allocation.
+  const isV1 = s.frames === undefined
+  const frameCount = isV1 ? 1 : s.frames
+  if (!Number.isInteger(frameCount) || frameCount < 1 || frameCount > MAX_SNAPSHOT_FRAMES) {
+    throw new Error(
+      `deserializeSnapshot: frames ${String(frameCount)} out of [1, ${MAX_SNAPSHOT_FRAMES}]`,
+    )
+  }
+  const frameHop =
+    !isV1 && Number.isFinite(s.frameHop) && s.frameHop > 0 ? s.frameHop : fftSize / 4
+  const total = frameCount * binCount
+
   const sr = s.sr
   if (!Number.isFinite(sr) || sr <= 0) {
     throw new Error('deserializeSnapshot: invalid sample rate')
@@ -176,10 +210,10 @@ export function deserializeSnapshot(s: SerializedSnapshot): SpectralSnapshot {
 
   // Decode magnitude bytes; base64UrlToBytes refuses to allocate more than the
   // expected byte count, and we re-check the exact length here.
-  const magBytes = base64UrlToBytes(s.mag, binCount)
-  if (magBytes.length !== binCount) {
+  const magBytes = base64UrlToBytes(s.mag, total)
+  if (magBytes.length !== total) {
     throw new Error(
-      `deserializeSnapshot: magnitude length ${magBytes.length} !== binCount ${binCount}`,
+      `deserializeSnapshot: magnitude length ${magBytes.length} !== frames*binCount ${total}`,
     )
   }
 
@@ -188,20 +222,20 @@ export function deserializeSnapshot(s: SerializedSnapshot): SpectralSnapshot {
     if (typeof s.phase !== 'string') {
       throw new Error('deserializeSnapshot: phase is not a string')
     }
-    const phaseBytes = base64UrlToBytes(s.phase, binCount)
-    if (phaseBytes.length !== binCount) {
+    const phaseBytes = base64UrlToBytes(s.phase, total)
+    if (phaseBytes.length !== total) {
       throw new Error(
-        `deserializeSnapshot: phase length ${phaseBytes.length} !== binCount ${binCount}`,
+        `deserializeSnapshot: phase length ${phaseBytes.length} !== frames*binCount ${total}`,
       )
     }
-    phase = new Float32Array(binCount)
-    for (let i = 0; i < binCount; i++) {
+    phase = new Float32Array(total)
+    for (let i = 0; i < total; i++) {
       phase[i] = dequantizeByte(phaseBytes[i], PHASE_MIN, PHASE_MAX)
     }
   }
 
-  const magnitude = new Float32Array(binCount)
-  for (let i = 0; i < binCount; i++) {
+  const magnitude = new Float32Array(total)
+  for (let i = 0; i < total; i++) {
     const db = dequantizeByte(magBytes[i], floorDb, 0)
     // A byte of 0 maps exactly to floorDb; treat that as silence so a fully
     // floored bin round-trips to a clean 0 rather than a tiny -100 dB gain.
@@ -214,6 +248,8 @@ export function deserializeSnapshot(s: SerializedSnapshot): SpectralSnapshot {
     binCount,
     analysisSampleRate: sr,
     baseFrequency: Number.isFinite(s.f0) ? s.f0 : 0,
+    frameCount,
+    frameHop,
     magnitude,
     phase,
     sourceLabel: typeof s.label === 'string' ? s.label : '',

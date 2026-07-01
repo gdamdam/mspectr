@@ -147,4 +147,54 @@ describe('SpectralEngine', () => {
     const after = run(e, 40, 220)
     expect(after.rms).toBeLessThan(1e-2)
   })
+
+  it('evolving capture is multi-frame and replays spectral motion', () => {
+    let frameCount = 0
+    const e = new SpectralEngine(SR, 'normal')
+    e.setOnCaptured((_s, snap) => (frameCount = snap.frameCount))
+    e.setParams({ ...DEFAULT_PARAMS, freezePhase: 'lock', reverbAmount: 0, attack: 0.005, release: 0.1, phaseMotion: 0 })
+
+    // Source that crossfades 220 Hz → 1200 Hz so successive captured frames differ
+    // (dark → bright). Capture a living region; feed long enough to fill it.
+    const inp = new Float32Array(BLOCK)
+    const l = new Float32Array(BLOCK)
+    const r = new Float32Array(BLOCK)
+    let n = 0
+    for (let b = 0; b < 320; b++) {
+      for (let i = 0; i < BLOCK; i++) {
+        const prog = Math.min(1, n / (SR * 0.95))
+        inp[i] = 0.5 * ((1 - prog) * Math.sin((2 * Math.PI * 220 * n) / SR) + prog * Math.sin((2 * Math.PI * 1200 * n) / SR))
+        n++
+      }
+      if (b === 20) e.capture('A', 'evolving')
+      e.render(inp, l, r)
+    }
+    expect(frameCount).toBeGreaterThan(1) // genuinely multi-frame
+
+    // Play a sustained note from the living snapshot and collect ~1 s of output.
+    e.noteOn(60, 110)
+    const out = new Float32Array(SR)
+    let pos = 0
+    inp.fill(0)
+    while (pos < out.length) {
+      e.render(inp, l, r)
+      const take = Math.min(BLOCK, out.length - pos)
+      out.set(l.subarray(0, take), pos)
+      pos += take
+    }
+    for (let i = 0; i < out.length; i++) expect(Math.abs(out[i])).toBeLessThanOrEqual(CEILING + 1e-4)
+
+    // Zero-crossing rate (brightness proxy) rises as the captured crossfade evolves
+    // dark → bright: the played spectrum is not static.
+    const zc = (fromSec: number, toSec: number) => {
+      let c = 0
+      const a = Math.floor(fromSec * SR)
+      const bEnd = Math.floor(toSec * SR)
+      for (let i = a + 1; i < bEnd; i++) if (out[i - 1] <= 0 !== (out[i] <= 0)) c++
+      return c
+    }
+    const early = zc(0.05, 0.28)
+    const late = zc(0.4, 0.63)
+    expect(late).toBeGreaterThan(early * 1.3)
+  })
 })

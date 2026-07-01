@@ -59,3 +59,47 @@ export class FrameAverager {
     return true
   }
 }
+
+/**
+ * Captures a SEQUENCE of frames (the 'evolving' / living capture): each analysed
+ * frame is appended, frame-major, into preallocated stores until `maxFrames` is
+ * reached. Replaying the sequence reproduces the source's own spectral motion
+ * (attack → body → decay), so a pluck stays a pluck and a bell keeps ringing —
+ * the biggest lever against the "static frozen pad" sameness.
+ */
+export class FrameSequenceCapturer {
+  readonly mag: Float32Array
+  readonly phase: Float32Array
+  private readonly binCount: number
+  private readonly maxFrames: number
+  private count = 0
+
+  constructor(binCount: number, maxFrames: number) {
+    this.binCount = binCount
+    this.maxFrames = maxFrames
+    this.mag = new Float32Array(binCount * maxFrames)
+    this.phase = new Float32Array(binCount * maxFrames)
+  }
+
+  reset(): void {
+    this.count = 0
+  }
+
+  /** Append one frame. Returns false (and ignores it) once full. */
+  add(mag: Float32Array, phase: Float32Array): boolean {
+    if (this.count >= this.maxFrames) return false
+    const off = this.count * this.binCount
+    this.mag.set(mag, off)
+    this.phase.set(phase, off)
+    this.count++
+    return true
+  }
+
+  get frames(): number {
+    return this.count
+  }
+
+  get full(): boolean {
+    return this.count >= this.maxFrames
+  }
+}

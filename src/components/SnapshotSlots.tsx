@@ -13,6 +13,9 @@ export interface SnapshotSlotsProps {
   auditioning: SnapshotSlot | null
   onAudition: (slot: SnapshotSlot | null) => void
   onClear: (slot: SnapshotSlot) => void
+  /** Optional short character tag for each slot (e.g. "bright · airy"). */
+  characterA?: string
+  characterB?: string
 }
 
 function timeLabel(ms: number | null): string {
@@ -25,12 +28,14 @@ function Slot({
   slot,
   meta,
   auditioning,
+  character,
   onAudition,
   onClear,
 }: {
   slot: SnapshotSlot
   meta: SlotMeta | null
   auditioning: SnapshotSlot | null
+  character?: string
   onAudition: (slot: SnapshotSlot | null) => void
   onClear: (slot: SnapshotSlot) => void
 }) {
@@ -47,6 +52,11 @@ function Slot({
         ) : null}
       </div>
       <p className="slot__label">{filled ? meta!.label : 'No capture'}</p>
+      {filled && character ? (
+        <p className="slot__character muted" title="Spectral character">
+          {character}
+        </p>
+      ) : null}
       <p className="slot__time">{timeLabel(meta?.capturedAt ?? null)}</p>
       <div className="slot__actions">
         <button
@@ -66,15 +76,15 @@ function Slot({
   )
 }
 
-export function SnapshotSlots({ a, b, auditioning, onAudition, onClear }: SnapshotSlotsProps) {
+export function SnapshotSlots({ a, b, auditioning, onAudition, onClear, characterA, characterB }: SnapshotSlotsProps) {
   return (
     <section className="panel slots" aria-labelledby="slots-heading">
       <h2 id="slots-heading" className="panel__eyebrow">
         Snapshots
       </h2>
       <div className="slots__pair">
-        <Slot slot="A" meta={a} auditioning={auditioning} onAudition={onAudition} onClear={onClear} />
-        <Slot slot="B" meta={b} auditioning={auditioning} onAudition={onAudition} onClear={onClear} />
+        <Slot slot="A" meta={a} auditioning={auditioning} character={characterA} onAudition={onAudition} onClear={onClear} />
+        <Slot slot="B" meta={b} auditioning={auditioning} character={characterB} onAudition={onAudition} onClear={onClear} />
       </div>
     </section>
   )

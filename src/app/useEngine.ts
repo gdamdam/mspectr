@@ -26,6 +26,7 @@ import {
   type SpectralSnapshot,
   type XYMapping,
 } from '../audio/contracts'
+import { snapshotCharacter } from '../components/snapshotCharacter'
 import { resolveParams } from '../performance/macros'
 import { getPreset, PRESETS } from '../performance/presets'
 import { createGeneratedSource } from '../sources/generated'
@@ -100,6 +101,7 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
         label: snap.sourceLabel,
         capturedAt: snap.capturedAt,
         isLiveDerived: snap.isLiveDerived,
+        character: snapshotCharacter(snap.magnitude, snap.binCount),
       })
     })
     const offOverload = engine.onOverload((active) => dispatch({ type: 'overload', active }))

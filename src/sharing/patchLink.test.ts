@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_PATCH,
+  MAX_SNAPSHOT_FRAMES,
   SNAPSHOT_SCHEMA_VERSION,
   dbToGain,
   type SpectralPatch,
@@ -16,16 +17,23 @@ import {
 } from './patchLink'
 import { bytesToBase64Url, serializeSnapshot } from './snapshotCodec'
 
-function makeSnapshot(fftSize: number, live: boolean): SpectralSnapshot {
+function makeSnapshot(fftSize: number, live: boolean, frameCount = 1): SpectralSnapshot {
   const binCount = fftSize / 2 + 1
-  const magnitude = new Float32Array(binCount)
-  for (let i = 0; i < binCount; i++) magnitude[i] = dbToGain(-50 + 30 * Math.sin(i / 7))
+  const total = frameCount * binCount
+  const magnitude = new Float32Array(total)
+  for (let f = 0; f < frameCount; f++) {
+    for (let i = 0; i < binCount; i++) {
+      magnitude[f * binCount + i] = dbToGain(-50 + 30 * Math.sin((i + f * 2) / 7))
+    }
+  }
   return {
     schemaVersion: SNAPSHOT_SCHEMA_VERSION,
     fftSize,
     binCount,
     analysisSampleRate: 44100,
     baseFrequency: 110,
+    frameCount,
+    frameHop: fftSize / 4,
     magnitude,
     phase: null,
     sourceLabel: live ? 'mic' : 'preset',
@@ -105,6 +113,33 @@ describe('snapshot links', () => {
     const a = makeSnapshot(1024, false)
     const link = encodeSnapshotLink(DEFAULT_PATCH, a, null)
     expect(estimateSnapshotLinkBytes(DEFAULT_PATCH, a, null)).toBe(link.length)
+  })
+
+  it('round-trips a multi-frame snapshot through a link', () => {
+    const a = makeSnapshot(1024, true, 8)
+    const back = decodeSnapshotLink(encodeSnapshotLink(DEFAULT_PATCH, a, null))
+    expect(back).not.toBeNull()
+    expect(back?.a?.frameCount).toBe(8)
+    expect(back?.a?.frameHop).toBe(1024 / 4)
+    expect(back?.a?.magnitude.length).toBe(8 * a.binCount)
+    expect(back?.a?.isLiveDerived).toBe(true)
+  })
+
+  it('estimate grows with frame count (multi-frame byte budget is real)', () => {
+    // A multi-frame snapshot carries frameCount times the magnitude bytes, so
+    // the estimate must reflect the true, larger size — the UI gates on this.
+    const one = estimateSnapshotLinkBytes(DEFAULT_PATCH, makeSnapshot(2048, false, 1), null)
+    const many = estimateSnapshotLinkBytes(DEFAULT_PATCH, makeSnapshot(2048, false, 16), null)
+    expect(many).toBeGreaterThan(one)
+  })
+
+  it('rejects a link that exceeds MAX_SNAPSHOT_LINK_BYTES', () => {
+    // A large multi-frame snapshot at the max fft size blows past the ceiling;
+    // decode must refuse it (returns null) rather than accept an unpasteable URL.
+    const big = makeSnapshot(8192, true, MAX_SNAPSHOT_FRAMES)
+    const link = encodeSnapshotLink(DEFAULT_PATCH, big, null)
+    expect(link.length).toBeGreaterThan(MAX_SNAPSHOT_LINK_BYTES)
+    expect(decodeSnapshotLink(link)).toBeNull()
   })
 
   it('rejects an oversized fragment without decoding', () => {

@@ -41,6 +41,8 @@ export interface SlotMeta {
   capturedAt: number | null
   /** True for mic/tab-derived snapshots — gates embedded-link sharing. */
   isLiveDerived: boolean
+  /** Short auto-derived spectral character tag, e.g. "bright · airy". */
+  character?: string
 }
 
 export type ModalId =
@@ -128,7 +130,7 @@ export type Action =
   | { type: 'set-source'; kind: AudioInputKind; label: string }
   | { type: 'set-live-frozen'; on: boolean }
   | { type: 'set-auditioning'; slot: SnapshotSlot | null }
-  | { type: 'snapshot-captured'; slot: SnapshotSlot; label: string; capturedAt: number; isLiveDerived: boolean }
+  | { type: 'snapshot-captured'; slot: SnapshotSlot; label: string; capturedAt: number; isLiveDerived: boolean; character?: string }
   | { type: 'snapshot-loaded'; slot: SnapshotSlot; meta: SlotMeta }
   | { type: 'clear-snapshot'; slot: SnapshotSlot }
   | { type: 'swap-snapshots' }
@@ -309,7 +311,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'snapshot-loaded': {
       const meta: SlotMeta =
         action.type === 'snapshot-captured'
-          ? { label: action.label, capturedAt: action.capturedAt, isLiveDerived: action.isLiveDerived }
+          ? { label: action.label, capturedAt: action.capturedAt, isLiveDerived: action.isLiveDerived, character: action.character }
           : action.meta
       return {
         ...state,

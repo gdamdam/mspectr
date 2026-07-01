@@ -32,23 +32,24 @@ import {
   LIVE_BUFFER_SECONDS,
   MIN_POLYPHONY,
   SNAPSHOT_SCHEMA_VERSION,
+  MAX_SNAPSHOT_FRAMES,
   clamp,
   qualityConfig,
 } from './contracts'
-import { FrameAverager, captureFrame } from './dsp/freeze'
+import { FrameAverager, FrameSequenceCapturer, captureFrame } from './dsp/freeze'
 import { FFT } from './dsp/fft'
 import { applyBlur } from './dsp/blur'
 import { applyFormant } from './dsp/formant'
 import { applyFreqShift, resampleSpectrum, shiftBinsFor } from './dsp/shift'
 import { applyHarmonize } from './dsp/harmonize'
 import { applyTilt } from './dsp/tilt'
-import { morphMagnitude } from './dsp/morph'
+import { morphMagnitude, morphSpectra } from './dsp/morph'
 import { SpectralGate } from './dsp/gate'
 import { OverlapAdd } from './dsp/overlapAdd'
 import { StereoReverb } from './dsp/reverb'
 import { StereoLimiter } from './dsp/limiter'
 import { StftAnalyzer } from './dsp/stft'
-import { baseBinOmega, makePhaseDrift, wrapPhase } from './dsp/phase'
+import { TWO_PI, baseBinOmega, findSpectralPeaks, lockPhasesToPeaks, makePhaseDrift, wrapPhase } from './dsp/phase'
 import { estimateFundamental } from './dsp/spectralFrame'
 import { VoiceAllocator } from '../instrument/voiceAllocator'
 
@@ -57,10 +58,20 @@ const REF_NOTE = 60
 const VOICE_GAIN = 0.22
 /** Frames accumulated for the 'average' capture mode. */
 const AVERAGE_FRAMES = 8
+/** Slow spectral-breathing LFO rate for the MOTION macro (Hz). */
+const MOTION_RATE_HZ = 0.12
 
 interface Slot {
+  /** Current interpolated frame (binCount) — what the resynth reads. */
   mag: Float32Array
   phase: Float32Array
+  /** Frame-major store, MAX_SNAPSHOT_FRAMES * binCount. */
+  framesMag: Float32Array
+  framesPhase: Float32Array
+  /** Number of stored frames (0 = empty, 1 = static, >1 = evolving). */
+  frameCount: number
+  /** Samples between frames (replay speed). */
+  frameHop: number
   filled: boolean
   baseFrequency: number
   sourceLabel: string
@@ -128,6 +139,8 @@ export class SpectralEngine {
   private fmEnv!: Float32Array
   private fmShifted!: Float32Array
   private harmScratch!: Float32Array
+  private peaks!: Int32Array
+  private synthPhase!: Float32Array
 
   // Output FIFO (stereo).
   private fifoL!: Float32Array
@@ -154,6 +167,12 @@ export class SpectralEngine {
   private captureMode: CaptureMode = 'frame'
   private averager!: FrameAverager
   private averaging = false
+  private sequencer!: FrameSequenceCapturer
+  private sequencing = false
+  // Shared evolving-frame cursor (ping-pong so the loop never clicks).
+  private frameCursor = 0
+  private frameDir = 1
+  private motionSamples = 0
   private onCaptured: SnapshotCapturedCallback | null = null
 
   /** Dedicated voice that sounds a snapshot endpoint at the reference pitch. */
@@ -204,6 +223,8 @@ export class SpectralEngine {
     this.fmEnv = new Float32Array(binCount)
     this.fmShifted = new Float32Array(binCount)
     this.harmScratch = new Float32Array(binCount)
+    this.peaks = new Int32Array(binCount)
+    this.synthPhase = new Float32Array(binCount)
     this.fifoSize = fftSize * 2
     this.fifoL = new Float32Array(this.fifoSize)
     this.fifoR = new Float32Array(this.fifoSize)
@@ -214,12 +235,19 @@ export class SpectralEngine {
     this.hopR = new Float32Array(hop)
     this.mono = new Float32Array(hop)
     this.averager = new FrameAverager(binCount)
+    this.sequencer = new FrameSequenceCapturer(binCount, MAX_SNAPSHOT_FRAMES)
+    this.frameCursor = 0
+    this.frameDir = 1
   }
 
   private makeSlot(binCount: number): Slot {
     return {
       mag: new Float32Array(binCount),
       phase: new Float32Array(binCount),
+      framesMag: new Float32Array(binCount * MAX_SNAPSHOT_FRAMES),
+      framesPhase: new Float32Array(binCount * MAX_SNAPSHOT_FRAMES),
+      frameCount: 0,
+      frameHop: this.hop,
       filled: false,
       baseFrequency: 0,
       sourceLabel: '',
@@ -326,6 +354,9 @@ export class SpectralEngine {
     if (mode === 'average') {
       this.averager.reset()
       this.averaging = true
+    } else if (mode === 'evolving') {
+      this.sequencer.reset()
+      this.sequencing = true
     }
   }
 
@@ -335,20 +366,30 @@ export class SpectralEngine {
 
   loadSnapshot(slot: SnapshotSlot, snap: SpectralSnapshot): void {
     const target = slot === 'A' ? this.slotA : this.slotB
-    // Resample stored data to the current binCount if quality differs.
-    if (snap.binCount === this.binCount) {
-      target.mag.set(snap.magnitude.subarray(0, this.binCount))
-      if (snap.phase) target.phase.set(snap.phase.subarray(0, this.binCount))
-      else target.phase.fill(0)
-    } else {
-      const ratio = (snap.binCount - 1) / (this.binCount - 1)
-      for (let k = 0; k < this.binCount; k++) {
-        const src = k * ratio
-        const i = Math.min(snap.binCount - 1, Math.floor(src))
-        target.mag[k] = snap.magnitude[i] ?? 0
-        target.phase[k] = snap.phase ? (snap.phase[i] ?? 0) : 0
+    const bc = this.binCount
+    const srcBins = snap.binCount
+    const fc = Math.min(Math.max(1, snap.frameCount || 1), MAX_SNAPSHOT_FRAMES)
+    // Copy each frame, resampling the bin axis if the quality (binCount) differs.
+    for (let f = 0; f < fc; f++) {
+      const srcOff = f * srcBins
+      const dstOff = f * bc
+      if (srcBins === bc) {
+        target.framesMag.set(snap.magnitude.subarray(srcOff, srcOff + bc), dstOff)
+        if (snap.phase) target.framesPhase.set(snap.phase.subarray(srcOff, srcOff + bc), dstOff)
+        else target.framesPhase.fill(0, dstOff, dstOff + bc)
+      } else {
+        const ratio = (srcBins - 1) / (bc - 1)
+        for (let k = 0; k < bc; k++) {
+          const i = Math.min(srcBins - 1, Math.floor(k * ratio))
+          target.framesMag[dstOff + k] = snap.magnitude[srcOff + i] ?? 0
+          target.framesPhase[dstOff + k] = snap.phase ? (snap.phase[srcOff + i] ?? 0) : 0
+        }
       }
     }
+    target.frameCount = fc
+    target.frameHop = snap.frameHop > 0 ? snap.frameHop : this.hop
+    target.mag.set(target.framesMag.subarray(0, bc))
+    target.phase.set(target.framesPhase.subarray(0, bc))
     target.filled = true
     target.baseFrequency = snap.baseFrequency
     target.sourceLabel = snap.sourceLabel
@@ -358,6 +399,7 @@ export class SpectralEngine {
   clearSnapshot(slot: SnapshotSlot): void {
     const t = slot === 'A' ? this.slotA : this.slotB
     t.filled = false
+    t.frameCount = 0
     t.mag.fill(0)
     t.phase.fill(0)
   }
@@ -372,8 +414,13 @@ export class SpectralEngine {
     const src = from === 'A' ? this.slotA : this.slotB
     const dst = to === 'A' ? this.slotA : this.slotB
     if (src === dst) return
+    const len = Math.max(1, src.frameCount) * this.binCount
     dst.mag.set(src.mag)
     dst.phase.set(src.phase)
+    dst.framesMag.set(src.framesMag.subarray(0, len))
+    dst.framesPhase.set(src.framesPhase.subarray(0, len))
+    dst.frameCount = src.frameCount
+    dst.frameHop = src.frameHop
     dst.filled = src.filled
     dst.baseFrequency = src.baseFrequency
     dst.sourceLabel = src.sourceLabel
@@ -440,16 +487,36 @@ export class SpectralEngine {
 
   private handleCapture(): void {
     if (this.captureSlot === null) return
-    if (this.captureMode === 'average' && this.averaging) {
+    const slot = this.captureSlot === 'A' ? this.slotA : this.slotB
+    const bc = this.binCount
+    if (this.captureMode === 'evolving' && this.sequencing) {
+      // Living capture: accumulate a frame sequence, then store it whole.
+      this.sequencer.add(this.analyzer.magnitude, this.analyzer.phase)
+      if (!this.sequencer.full) return
+      const fc = Math.max(1, this.sequencer.frames)
+      slot.framesMag.set(this.sequencer.mag.subarray(0, fc * bc))
+      slot.framesPhase.set(this.sequencer.phase.subarray(0, fc * bc))
+      slot.frameCount = fc
+      slot.frameHop = this.hop
+      slot.mag.set(slot.framesMag.subarray(0, bc)) // current = first frame
+      this.sequencing = false
+      this.finalizeCapture(slot)
+    } else if (this.captureMode === 'average' && this.averaging) {
       this.averager.add(this.analyzer.magnitude, this.analyzer.phase)
       if (this.averager.frames < AVERAGE_FRAMES) return
-      const slot = this.captureSlot === 'A' ? this.slotA : this.slotB
       this.averager.finish(slot.mag, slot.phase)
+      slot.framesMag.set(slot.mag.subarray(0, bc))
+      slot.framesPhase.set(slot.phase.subarray(0, bc))
+      slot.frameCount = 1
+      slot.frameHop = this.hop
       this.averaging = false
       this.finalizeCapture(slot)
     } else {
-      const slot = this.captureSlot === 'A' ? this.slotA : this.slotB
       captureFrame(this.analyzer.magnitude, this.analyzer.phase, slot.mag, slot.phase)
+      slot.framesMag.set(slot.mag.subarray(0, bc))
+      slot.framesPhase.set(slot.phase.subarray(0, bc))
+      slot.frameCount = 1
+      slot.frameHop = this.hop
       this.finalizeCapture(slot)
     }
   }
@@ -467,14 +534,18 @@ export class SpectralEngine {
   }
 
   private snapshotOf(slot: Slot, capturedAt: number): SpectralSnapshot {
+    const fc = Math.max(1, slot.frameCount)
+    const len = fc * this.binCount
     return {
       schemaVersion: SNAPSHOT_SCHEMA_VERSION,
       fftSize: this.fftSize,
       binCount: this.binCount,
       analysisSampleRate: this.sampleRate,
       baseFrequency: slot.baseFrequency,
-      magnitude: slot.mag.slice(),
-      phase: slot.phase.slice(),
+      frameCount: fc,
+      frameHop: slot.frameHop,
+      magnitude: slot.framesMag.slice(0, len),
+      phase: slot.framesPhase.slice(0, len),
       sourceLabel: slot.sourceLabel,
       capturedAt,
       isLiveDerived: slot.isLiveDerived,
@@ -492,14 +563,25 @@ export class SpectralEngine {
     const targetOut = Math.pow(10, p.outputGainDb / 20)
     this.smOutGain += sc * (targetOut - this.smOutGain)
 
-    // Effective endpoints: a filled snapshot, else the (possibly frozen) live frame.
+    // Advance the shared evolving-frame cursor and refresh each filled slot's
+    // current frame, so a living capture replays its own spectral motion.
+    this.advanceFrameCursor()
+    this.refreshSlotFrame(this.slotA)
+    this.refreshSlotFrame(this.slotB)
+
+    // Effective endpoints: a filled snapshot's current frame, else the live frame.
     const effA = this.slotA.filled ? this.slotA.mag : this.liveMag
     const effB = this.slotB.filled ? this.slotB.mag : this.liveMag
 
-    // Shared processed base spectrum for played voices: morph → tilt → blur → gate.
-    morphMagnitude(effA, effB, clamp(p.morph, 0, 1), this.s1)
+    // Shared processed base spectrum: envelope/fine-structure morph → tilt →
+    // MOTION-breathed blur → gate. (fmEnv/fmShifted are free here — the per-voice
+    // formant reuses them later in the hop.)
+    morphSpectra(effA, effB, clamp(p.morph, 0, 1), this.s1, this.fmEnv, this.fmShifted)
     applyTilt(this.s1, p.tilt, this.s2, this.sampleRate, this.fftSize)
-    applyBlur(this.s2, p.blur, this.s1)
+    this.motionSamples += hop
+    const motionLfo = Math.sin((TWO_PI * MOTION_RATE_HZ * this.motionSamples) / this.sampleRate)
+    const effBlur = clamp(p.blur + p.phaseMotion * 0.25 * motionLfo, 0, 1)
+    applyBlur(this.s2, effBlur, this.s1)
     this.gate.process(this.s1, p.gate, this.s2) // s2 = shared processed base
 
     hopL.fill(0)
@@ -550,6 +632,44 @@ export class SpectralEngine {
     this.fifoCount += hop
   }
 
+  /** Advance the shared evolving-frame cursor, ping-ponging so it never clicks. */
+  private advanceFrameCursor(): void {
+    const fcA = this.slotA.filled ? this.slotA.frameCount : 1
+    const fcB = this.slotB.filled ? this.slotB.frameCount : 1
+    const maxFrames = Math.max(fcA, fcB)
+    if (maxFrames <= 1) {
+      this.frameCursor = 0
+      return
+    }
+    const fhop = this.slotA.filled && this.slotA.frameCount > 1 ? this.slotA.frameHop : this.slotB.frameHop
+    const step = (this.hop / Math.max(1, fhop)) * this.frameDir
+    let pos = this.frameCursor + step
+    const maxPos = maxFrames - 1
+    if (pos >= maxPos) {
+      pos = maxPos
+      this.frameDir = -1
+    } else if (pos <= 0) {
+      pos = 0
+      this.frameDir = 1
+    }
+    this.frameCursor = pos
+  }
+
+  /** Interpolate a filled slot's frame at the cursor into its current-frame buffer. */
+  private refreshSlotFrame(slot: Slot): void {
+    if (!slot.filled || slot.frameCount <= 1) return
+    const bc = this.binCount
+    const pos = Math.min(this.frameCursor, slot.frameCount - 1)
+    const i = Math.floor(pos)
+    const f = pos - i
+    const a = i * bc
+    const b = Math.min(i + 1, slot.frameCount - 1) * bc
+    const fm = slot.framesMag
+    const out = slot.mag
+    const u = 1 - f
+    for (let k = 0; k < bc; k++) out[k] = fm[a + k] * u + fm[b + k] * f
+  }
+
   /** Advance a voice's envelope and overlap-add its spectral chain into the hop. */
   private synthVoiceInto(
     v: Voice,
@@ -581,7 +701,17 @@ export class SpectralEngine {
       if (animate && motion > 0) ph += v.drift(motion * 0.6)
       phase[k] = wrapPhase(ph)
     }
-    v.ola.process(this.bufB, phase, this.mono)
+    // 'lock' mode: phase-lock partials around spectral peaks for a clearer, less
+    // hollow tone; 'animate' keeps the drifting shimmer. Locking writes a copy so
+    // the accumulator keeps advancing coherently underneath.
+    let outPhase = phase
+    if (!animate) {
+      this.synthPhase.set(phase)
+      const peakCount = findSpectralPeaks(this.bufB, this.peaks)
+      lockPhasesToPeaks(this.synthPhase, this.bufB, this.peaks, peakCount)
+      outPhase = this.synthPhase
+    }
+    v.ola.process(this.bufB, outPhase, this.mono)
     const mono = this.mono
     const pan = clamp((v.note - REF_NOTE) / 36, -1, 1) * 0.35
     const lg = Math.cos((pan + 1) * (Math.PI / 4))

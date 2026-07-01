@@ -1,7 +1,8 @@
 /**
  * CapturePanel — turning the live spectrum into held identities. Capture into A
- * or B (single frame or short average), freeze/clear the live spectrum, and the
- * slot operations swap / copy A→B. Disabled until audio has started.
+ * or B (single frame, short average, or a "living" multi-frame capture that
+ * replays the sound's movement), freeze/clear the live spectrum, and the slot
+ * operations swap / copy A→B. Disabled until audio has started.
  */
 import type { CaptureMode, SnapshotSlot } from '../audio/contracts'
 
@@ -44,7 +45,7 @@ export function CapturePanel({
             checked={captureMode === 'frame'}
             onChange={() => onCaptureModeChange('frame')}
           />
-          <span>Frame</span>
+          <span>Single</span>
         </label>
         <label className="radio">
           <input
@@ -55,7 +56,20 @@ export function CapturePanel({
           />
           <span>Average</span>
         </label>
+        <label className="radio">
+          <input
+            type="radio"
+            name="capture-mode"
+            checked={captureMode === 'evolving'}
+            onChange={() => onCaptureModeChange('evolving')}
+            aria-describedby="capture-mode-living-hint"
+          />
+          <span>Living</span>
+        </label>
       </fieldset>
+      <p id="capture-mode-living-hint" className="capture__hint muted">
+        Living captures the sound&rsquo;s movement — attack, body, decay.
+      </p>
 
       <div className="capture__buttons">
         <button type="button" className="button" disabled={disabled} onClick={() => onCapture('A', captureMode)}>

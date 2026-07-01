@@ -122,7 +122,7 @@ export function App() {
   const controls = useEngine({ stateRef, dispatch })
   const [starting, setStarting] = useState(false)
   const [pendingMic, setPendingMic] = useState<{ deviceId?: string } | null>(null)
-  const [captureMode, setCaptureMode] = useState<CaptureMode>('frame')
+  const [captureMode, setCaptureMode] = useState<CaptureMode>('evolving')
 
   const { patch, ui } = state
   const mapping = useMemo(() => xyMappingFor(patch.presetId), [patch.presetId])
@@ -500,6 +500,8 @@ export function App() {
           <SnapshotSlots
             a={ui.snapshotA}
             b={ui.snapshotB}
+            characterA={ui.snapshotA?.character}
+            characterB={ui.snapshotB?.character}
             auditioning={ui.auditioning}
             onAudition={controls.audition}
             onClear={clearSnapshot}
