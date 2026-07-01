@@ -15,6 +15,8 @@
 
 ### [▶ Play it live → mspectr.mpump.live](https://mspectr.mpump.live)
 
+<img src="./mspectr_screenshot.gif" alt="mspectr in action — capturing a spectrum and playing it back" width="800" />
+
 </div>
 
 ---
