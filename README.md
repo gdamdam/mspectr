@@ -4,9 +4,9 @@
 
 **Capture a sound. Play what it is made of.**
 
-[![version](https://img.shields.io/badge/version-0.1.0-6c8f3a)](./package.json)
+[![version](https://img.shields.io/badge/version-1.1.3-6c8f3a)](./package.json)
 [![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](./LICENSE)
-[![tests](https://img.shields.io/badge/tests-319%20passing-2ea043)](#verification)
+[![tests](https://img.shields.io/badge/tests-377%20passing-2ea043)](#verification)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](./tsconfig.json)
 [![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=white)](https://react.dev)
 [![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)](https://vite.dev)
@@ -95,7 +95,7 @@ See [`docs/architecture.md`](./docs/architecture.md) and [`docs/dsp.md`](./docs/
 ## Verification
 
 ```bash
-npm run check   # lint + typecheck + 319 tests + production build
+npm run check   # lint + typecheck + 377 tests + production build
 ```
 
 Tests are deterministic and live next to the code. They cover FFT/STFT reconstruction, spectral operations, limiter and reverb behavior, engine capture and voice flow, presets and macros, keyboard and MIDI routing, generated/file sources, persistence, sharing codecs, WAV export, visualization, React state, and core UI flows. Live audio devices remain part of the manual browser/device checklist.

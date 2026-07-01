@@ -77,8 +77,9 @@ explicit consent.
   a bypass for `version.json` and cross-origin requests. On install it precaches
   `index.html` plus the hashed assets listed in `precache-manifest.json` (emitted
   by the Vite build). It uses `skipWaiting` + `clients.claim` and a versioned
-  cache name (`mspectr-shell-v1`). The worker registration itself lives outside
-  this layer (TBD — lead to confirm registration entry point).
+  cache name (`mspectr-shell-v1`). The worker is registered from `src/main.tsx`
+  on window `load`, in production builds only (`import.meta.env.PROD`); failures
+  are non-fatal so the app still works online without offline support.
 
 ## Build & deploy
 

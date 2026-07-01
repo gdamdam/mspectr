@@ -305,7 +305,15 @@ export function App() {
   // --- sessions glue --------------------------------------------------------
   const onSaveSession = useCallback(async (name: string) => {
     const now = Date.now()
-    const id = currentInstrumentRef.current ?? crypto.randomUUID()
+    const existingId = currentInstrumentRef.current
+    const id = existingId ?? crypto.randomUUID()
+    // Updating in place must keep the original creation time; only a brand-new
+    // session stamps createdAt = now. updatedAt always advances.
+    let createdAt = now
+    if (existingId) {
+      const prev = await loadInstrument(existingId)
+      if (prev) createdAt = prev.createdAt
+    }
     const refA = snapDataRef.current.A ? `${id}:A` : null
     const refB = snapDataRef.current.B ? `${id}:B` : null
     if (snapDataRef.current.A && refA) await putSnapshot(refA, snapDataRef.current.A)
@@ -314,7 +322,7 @@ export function App() {
       schemaVersion: INSTRUMENT_SCHEMA_VERSION,
       id,
       name,
-      createdAt: now,
+      createdAt,
       updatedAt: now,
       patch: stateRef.current.patch,
       snapshotRefA: refA,
@@ -329,18 +337,25 @@ export function App() {
     async (id: string) => {
       const inst = await loadInstrument(id)
       if (!inst) return
+      // Resolve BOTH snapshots before mutating any state. A corrupt snapshot
+      // rejects here (surfaced by the caller) and a missing one resolves to
+      // null — either way the load is all-or-nothing and can never leave the
+      // outgoing session's spectra half-applied under the incoming patch.
+      const snapA = inst.snapshotRefA ? await getSnapshot(inst.snapshotRefA) : null
+      const snapB = inst.snapshotRefB ? await getSnapshot(inst.snapshotRefB) : null
       currentInstrumentRef.current = id
       dispatch({ type: 'load-patch', patch: inst.patch, sourceLabel: inst.sourceLabel })
-      for (const slot of ['A', 'B'] as SnapshotSlot[]) {
-        const ref = slot === 'A' ? inst.snapshotRefA : inst.snapshotRefB
-        if (!ref) {
-          clearSnapshot(slot)
-          continue
-        }
-        const snap = await getSnapshot(ref)
+      for (const [slot, snap] of [
+        ['A', snapA],
+        ['B', snapB],
+      ] as [SnapshotSlot, SpectralSnapshot | null][]) {
         if (snap) {
           snapDataRef.current[slot] = snap
           controls.loadSnapshotFromSerialized(slot, snap, snap.sourceLabel)
+        } else {
+          // No ref, or a ref that resolved to nothing — clear so the previous
+          // session's spectrum is never left active in this slot.
+          clearSnapshot(slot)
         }
       }
       dispatch({ type: 'open-modal', modal: null })

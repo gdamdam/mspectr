@@ -11,7 +11,8 @@
  *  - Note flow: rawNote → quantizeNote(rawNote + octave*12, scale) → engine.
  *    The exact quantized note is tracked per raw note so note-off releases the
  *    same pitch even if the user changed octave/scale meanwhile.
- *  - Everything is torn down on unmount AND pagehide (mobile bfcache safety).
+ *  - Everything is torn down on a real page dismissal (pagehide); a bfcache-
+ *    persisted pagehide only suspends so the restored page stays playable.
  */
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type { Dispatch, MutableRefObject } from 'react'
@@ -85,6 +86,8 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
   const engine = engineRef.current
 
   const sourceRef = useRef<SourceHandle | null>(null)
+  /** Monotonic token so a slow async source swap can't clobber a newer one. */
+  const sourceReqRef = useRef(0)
   const keyboardRef = useRef<QwertyKeyboard | null>(null)
   const midiRef = useRef<MidiRouter | null>(null)
   const recorderRef = useRef<WavRecorder | null>(null)
@@ -235,6 +238,9 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
       setSourcePreset(generatedId, label) {
         const ctx = engine.context
         if (!ctx) return
+        // Synchronous, but still bump the token so any async source swap already
+        // in flight resolves stale and won't overwrite this preset.
+        sourceReqRef.current += 1
         const handle = createGeneratedSource(ctx, generatedId)
         swapSource(handle, 'generated', label, true)
       },
@@ -242,14 +248,19 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
       async setFileSource(file) {
         const ctx = engine.context
         if (!ctx) return
+        const token = ++sourceReqRef.current
         const handle = await createFileSource(ctx, file)
+        // A newer source selection superseded this one while decoding — drop it.
+        if (token !== sourceReqRef.current) return handle.dispose()
         swapSource(handle, 'file', handle.label || file.name, true)
       },
 
       async setMicSource(deviceId) {
         const ctx = engine.context
         if (!ctx) return
+        const token = ++sourceReqRef.current
         const handle = await createMicSource(ctx, deviceId)
+        if (token !== sourceReqRef.current) return handle.dispose()
         // Mic must NOT monitor — feedback safety.
         swapSource(handle, 'microphone', handle.label || 'Microphone', false)
       },
@@ -257,7 +268,9 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
       async setTabSource() {
         const ctx = engine.context
         if (!ctx) return
+        const token = ++sourceReqRef.current
         const handle = await createTabSource(ctx)
+        if (token !== sourceReqRef.current) return handle.dispose()
         swapSource(handle, 'tab', handle.label || 'Tab audio', false)
       },
 
@@ -360,7 +373,16 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
 
   // --- teardown on unmount + pagehide --------------------------------------
   useEffect(() => {
-    const teardown = () => {
+    const teardown = (e: PageTransitionEvent) => {
+      // Entering the back/forward cache (persisted): the page can be restored
+      // intact later, so keep the engine alive and only suspend the context.
+      // Disposing here would leave the restored UI (still "audio started")
+      // wired to a permanently-dead engine that start() refuses to revive; the
+      // engine's own pageshow listener resumes the context on restore.
+      if (e.persisted) {
+        void engine.suspend()
+        return
+      }
       try {
         recorderRef.current?.cancel()
         recorderRef.current?.dispose()

@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { DEFAULT_PATCH, INSTRUMENT_SCHEMA_VERSION, type SavedInstrument } from '../audio/contracts'
+import {
+  DEFAULT_PATCH,
+  INSTRUMENT_SCHEMA_VERSION,
+  SNAPSHOT_SCHEMA_VERSION,
+  dbToGain,
+  type SavedInstrument,
+  type SpectralSnapshot,
+} from '../audio/contracts'
 
 // ---------------------------------------------------------------------------
 // Minimal in-memory IndexedDB mock.
@@ -119,6 +126,7 @@ import {
   renameInstrument,
   saveInstrument,
 } from './instruments'
+import { getSnapshot, putSnapshot } from './snapshots'
 
 const originalIndexedDB = (globalThis as { indexedDB?: unknown }).indexedDB
 
@@ -142,6 +150,27 @@ function makeInstrument(id: string, overrides: Partial<SavedInstrument> = {}): S
     snapshotRefB: null,
     sourceLabel: '',
     ...overrides,
+  }
+}
+
+function makeSnapshot(): SpectralSnapshot {
+  const fftSize = 512
+  const binCount = fftSize / 2 + 1
+  const magnitude = new Float32Array(binCount)
+  for (let i = 0; i < binCount; i++) magnitude[i] = dbToGain(-40 + 20 * Math.cos(i / 5))
+  return {
+    schemaVersion: SNAPSHOT_SCHEMA_VERSION,
+    fftSize,
+    binCount,
+    analysisSampleRate: 48000,
+    baseFrequency: 220,
+    frameCount: 1,
+    frameHop: fftSize / 4,
+    magnitude,
+    phase: null,
+    sourceLabel: 'src',
+    capturedAt: 42,
+    isLiveDerived: false,
   }
 }
 
@@ -206,6 +235,27 @@ describe('instruments CRUD (in-memory IDB)', () => {
 
   it('rejects saving with an empty id', async () => {
     await expect(saveInstrument(makeInstrument(''))).rejects.toThrow(/id/)
+  })
+})
+
+describe('deleteInstrument cascades to owned snapshots', () => {
+  it('removes the snapshots the deleted instrument owns', async () => {
+    await putSnapshot('a:A', makeSnapshot())
+    await putSnapshot('a:B', makeSnapshot())
+    await saveInstrument(makeInstrument('a', { snapshotRefA: 'a:A', snapshotRefB: 'a:B' }))
+    await deleteInstrument('a')
+    expect(await loadInstrument('a')).toBeNull()
+    expect(await getSnapshot('a:A')).toBeNull()
+    expect(await getSnapshot('a:B')).toBeNull()
+  })
+
+  it('keeps a snapshot another instrument (a duplicate) still references', async () => {
+    await putSnapshot('a:A', makeSnapshot())
+    await saveInstrument(makeInstrument('a', { snapshotRefA: 'a:A' }))
+    // A duplicate shares the source's ref; deleting the source must not strip it.
+    await saveInstrument(makeInstrument('a-copy', { snapshotRefA: 'a:A' }))
+    await deleteInstrument('a')
+    expect(await getSnapshot('a:A')).not.toBeNull()
   })
 })
 

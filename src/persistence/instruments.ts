@@ -15,6 +15,7 @@ import {
   type SavedInstrument,
 } from '../audio/contracts'
 import { INSTRUMENTS_STORE, withStore } from './db'
+import { deleteSnapshot } from './snapshots'
 
 const DEFAULT_INSTRUMENT_NAME = 'Untitled'
 
@@ -105,7 +106,25 @@ export async function loadInstrument(id: string): Promise<SavedInstrument | null
 }
 
 export async function deleteInstrument(id: string): Promise<void> {
+  // Read the record first so we can cascade-delete the snapshots it owns — a
+  // bare instrument delete would orphan those spectra in the snapshots store.
+  const inst = await loadInstrument(id)
   await withStore(INSTRUMENTS_STORE, 'readwrite', (store) => store.delete(id))
+  if (!inst) return
+  const refs = [inst.snapshotRefA, inst.snapshotRefB].filter((r): r is string => r !== null)
+  if (refs.length === 0) return
+  // A duplicated instrument shares its source's snapshot refs (see
+  // duplicateInstrument), so only drop a snapshot that no surviving instrument
+  // still references — otherwise deleting one would strip a spectrum in use.
+  const survivors = await listInstruments()
+  const stillReferenced = new Set<string>()
+  for (const s of survivors) {
+    if (s.snapshotRefA) stillReferenced.add(s.snapshotRefA)
+    if (s.snapshotRefB) stillReferenced.add(s.snapshotRefB)
+  }
+  for (const ref of refs) {
+    if (!stillReferenced.has(ref)) await deleteSnapshot(ref)
+  }
 }
 
 export async function renameInstrument(id: string, name: string): Promise<void> {
