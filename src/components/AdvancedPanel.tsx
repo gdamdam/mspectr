@@ -16,6 +16,7 @@ import {
   type QualityMode,
   type SpectralParams,
 } from '../audio/contracts'
+import { Select } from './Select'
 
 export interface AdvancedPanelProps {
   open: boolean
@@ -159,28 +160,24 @@ export function AdvancedPanel({
             <legend>Harmony interval</legend>
             <label className="field">
               <span className="visually-hidden">Harmony interval set</span>
-              <select
-                className="select"
+              <Select
+                ariaLabel="Harmony interval set"
                 value={params.harmonyInterval}
-                onChange={(e) => onParam('harmonyInterval', e.target.value as IntervalSetId)}
-              >
-                {(Object.keys(INTERVAL_SETS) as IntervalSetId[]).map((id) => (
-                  <option key={id} value={id}>
-                    {id}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => onParam('harmonyInterval', v as IntervalSetId)}
+                options={(Object.keys(INTERVAL_SETS) as IntervalSetId[]).map((id) => ({ value: id, label: id }))}
+              />
             </label>
             <label className="field">
               <span className="field__label">Freeze phase</span>
-              <select
-                className="select"
+              <Select
+                ariaLabel="Freeze phase"
                 value={params.freezePhase}
-                onChange={(e) => onParam('freezePhase', e.target.value as PhaseMode)}
-              >
-                <option value="animate">Animate</option>
-                <option value="lock">Lock</option>
-              </select>
+                onChange={(v) => onParam('freezePhase', v as PhaseMode)}
+                options={[
+                  { value: 'animate', label: 'Animate' },
+                  { value: 'lock', label: 'Lock' },
+                ]}
+              />
             </label>
           </fieldset>
 

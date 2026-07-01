@@ -12,6 +12,7 @@ import type { GeneratedSourceId, Preset } from '../audio/contracts'
 import { PRESETS } from '../performance/presets'
 import { supportsInputDeviceSelection, supportsTabCapture } from '../sources/capabilities'
 import type { AudioInputKind } from '../sources/types'
+import { Select } from './Select'
 
 /** Title-case a source id, e.g. 'glass-harmonica' → 'Glass Harmonica'. */
 export function soundLabel(id: string): string {
@@ -85,6 +86,10 @@ export function SourcePanel({
   const [dragging, setDragging] = useState(false)
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
   const [deviceId, setDeviceId] = useState<string>('')
+  // The built-in sound picker is fire-and-forget (loads a sound, doesn't own
+  // "current source" state), but the custom Select needs a value to display the
+  // last pick. Kept local so it reflects the selection without touching engine state.
+  const [soundId, setSoundId] = useState<string>('')
 
   const onFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
@@ -136,24 +141,16 @@ export function SourcePanel({
         <p className="source__grouplabel">
           Preset <span className="source__grouphint">— a complete scene</span>
         </p>
-        <select
-          className="select"
-          aria-label="Preset — loads a complete scene (a sound plus all the controls)"
-          title="Loads a complete scene: a sound plus all the controls"
+        <Select
+          ariaLabel="Preset — loads a complete scene (a sound plus all the controls)"
           value={presetId ?? ''}
-          onChange={(e) => onSelectPreset(e.target.value)}
+          onChange={onSelectPreset}
           disabled={!audioStarted}
-        >
-          {PRESET_GROUPS.map(({ group, presets }) => (
-            <optgroup key={group} label={group}>
-              {presets.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
+          groups={PRESET_GROUPS.map(({ group, presets }) => ({
+            label: group,
+            options: presets.map((p) => ({ value: p.id, label: p.name })),
+          }))}
+        />
       </div>
 
       <hr className="source__rule" />
@@ -167,24 +164,17 @@ export function SourcePanel({
 
         <label className="field">
           <span className="field__label">Built-in sound</span>
-          <select
-            className="select"
-            defaultValue=""
-            title="Swap the raw sound being analysed, without changing the controls"
-            onChange={(e) => {
-              if (e.target.value) onSelectSound(e.target.value as GeneratedSourceId)
+          <Select
+            ariaLabel="Built-in sound"
+            placeholder="Load a built-in sound…"
+            value={soundId}
+            onChange={(v) => {
+              setSoundId(v)
+              onSelectSound(v as GeneratedSourceId)
             }}
             disabled={!audioStarted}
-          >
-            <option value="" disabled>
-              Load a built-in sound…
-            </option>
-            {SORTED_SOUND_IDS.map((id) => (
-              <option key={id} value={id}>
-                {soundLabel(id)}
-              </option>
-            ))}
-          </select>
+            options={SORTED_SOUND_IDS.map((id) => ({ value: id, label: soundLabel(id) }))}
+          />
         </label>
 
       <div
@@ -221,14 +211,15 @@ export function SourcePanel({
         {supportsInputDeviceSelection() && devices.length > 0 ? (
           <label className="field">
             <span className="field__label">Input device</span>
-            <select className="select" value={deviceId} onChange={(e) => setDeviceId(e.target.value)}>
-              <option value="">Default</option>
-              {devices.map((d) => (
-                <option key={d.deviceId} value={d.deviceId}>
-                  {d.label || 'Input'}
-                </option>
-              ))}
-            </select>
+            <Select
+              ariaLabel="Input device"
+              value={deviceId}
+              onChange={setDeviceId}
+              options={[
+                { value: '', label: 'Default' },
+                ...devices.map((d) => ({ value: d.deviceId, label: d.label || 'Input' })),
+              ]}
+            />
           </label>
         ) : null}
         <button

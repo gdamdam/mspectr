@@ -5,6 +5,7 @@
  * polyphony. Octave/scale/polyphony edit the patch; panic releases everything.
  */
 import { SCALE_DEGREES, type ScaleId } from '../audio/contracts'
+import { Select } from './Select'
 
 export interface PlayBarProps {
   audioStarted: boolean
@@ -77,13 +78,12 @@ export function PlayBar({
 
         <label className="field field--inline" title="Snap played notes to this scale, so every key stays in key">
           <span className="field__label">Scale lock</span>
-          <select className="select" value={scale} onChange={(e) => onScale(e.target.value as ScaleId)}>
-            {(Object.keys(SCALE_DEGREES) as ScaleId[]).map((s) => (
-              <option key={s} value={s}>
-                {SCALE_LABELS[s]}
-              </option>
-            ))}
-          </select>
+          <Select
+            ariaLabel="Scale lock"
+            value={scale}
+            onChange={(v) => onScale(v as ScaleId)}
+            options={(Object.keys(SCALE_DEGREES) as ScaleId[]).map((s) => ({ value: s, label: SCALE_LABELS[s] }))}
+          />
         </label>
 
         <label className="field field--inline">
