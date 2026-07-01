@@ -75,7 +75,7 @@ export function PlayBar({
           </span>
         </label>
 
-        <label className="field field--inline">
+        <label className="field field--inline" title="Snap played notes to this scale, so every key stays in key">
           <span className="field__label">Scale lock</span>
           <select className="select" value={scale} onChange={(e) => onScale(e.target.value as ScaleId)}>
             {(Object.keys(SCALE_DEGREES) as ScaleId[]).map((s) => (
@@ -101,7 +101,13 @@ export function PlayBar({
           />
         </label>
 
-        <button type="button" className="button button--danger" onClick={onPanic} disabled={!audioStarted}>
+        <button
+          type="button"
+          className="button button--danger"
+          title="Silence everything now — release all held voices"
+          onClick={onPanic}
+          disabled={!audioStarted}
+        >
           Panic
         </button>
       </div>

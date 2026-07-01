@@ -7,9 +7,19 @@
  */
 import { useRef, useState } from 'react'
 import type { ChangeEvent, DragEvent } from 'react'
+import { GENERATED_SOURCE_IDS } from '../audio/contracts'
+import type { GeneratedSourceId } from '../audio/contracts'
 import { PRESETS } from '../performance/presets'
 import { supportsInputDeviceSelection, supportsTabCapture } from '../sources/capabilities'
 import type { AudioInputKind } from '../sources/types'
+
+/** Title-case a source id, e.g. 'glass-harmonica' → 'Glass Harmonica'. */
+export function soundLabel(id: string): string {
+  return id
+    .split('-')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ')
+}
 
 export interface SourcePanelProps {
   audioStarted: boolean
@@ -19,6 +29,7 @@ export interface SourcePanelProps {
   presetId: string | null
   onStart: () => void
   onSelectPreset: (presetId: string) => void
+  onSelectSound: (id: GeneratedSourceId) => void
   onPickFile: (file: File) => void
   onEnableMic: (deviceId?: string) => void
   onEnableTab: () => void
@@ -43,6 +54,7 @@ export function SourcePanel({
   presetId,
   onStart,
   onSelectPreset,
+  onSelectSound,
   onPickFile,
   onEnableMic,
   onEnableTab,
@@ -83,7 +95,13 @@ export function SourcePanel({
       </h2>
 
       {!audioStarted ? (
-        <button type="button" className="button button--primary button--start" onClick={onStart} disabled={starting}>
+        <button
+          type="button"
+          className="button button--primary button--start"
+          title="Start the audio engine — needed before capturing or playing"
+          onClick={onStart}
+          disabled={starting}
+        >
           {starting ? 'Starting…' : 'Start audio'}
         </button>
       ) : (
@@ -111,7 +129,7 @@ export function SourcePanel({
         </label>
       ) : null}
 
-      <label className="field">
+      <label className="field" title="Load a built-in sound to analyse and play, as a starting point">
         <span className="field__label">Preset</span>
         <select
           className="select"
@@ -122,6 +140,27 @@ export function SourcePanel({
           {PRESETS.map((p) => (
             <option key={p.id} value={p.id}>
               {p.group} — {p.name}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="field">
+        <span className="field__label">Sound</span>
+        <select
+          className="select"
+          defaultValue=""
+          onChange={(e) => {
+            if (e.target.value) onSelectSound(e.target.value as GeneratedSourceId)
+          }}
+          disabled={!audioStarted}
+        >
+          <option value="" disabled>
+            Load a built-in sound…
+          </option>
+          {GENERATED_SOURCE_IDS.map((id) => (
+            <option key={id} value={id}>
+              {soundLabel(id)}
             </option>
           ))}
         </select>
@@ -176,6 +215,7 @@ export function SourcePanel({
           className="chip"
           data-active={sourceKind === 'microphone' || undefined}
           disabled={!audioStarted}
+          title="Analyse live microphone input (asks for permission)"
           onClick={async () => {
             if (supportsInputDeviceSelection()) await refreshDevices()
             onEnableMic(deviceId || undefined)

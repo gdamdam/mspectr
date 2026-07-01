@@ -38,7 +38,7 @@ export function CapturePanel({
 
       <fieldset className="capture__mode" disabled={disabled}>
         <legend className="visually-hidden">Capture mode</legend>
-        <label className="radio">
+        <label className="radio" title="Grab one instant of the spectrum — a single still frame">
           <input
             type="radio"
             name="capture-mode"
@@ -47,7 +47,7 @@ export function CapturePanel({
           />
           <span>Single</span>
         </label>
-        <label className="radio">
+        <label className="radio" title="Average several frames into one steady, smoothed spectrum">
           <input
             type="radio"
             name="capture-mode"
@@ -72,10 +72,22 @@ export function CapturePanel({
       </p>
 
       <div className="capture__buttons">
-        <button type="button" className="button" disabled={disabled} onClick={() => onCapture('A', captureMode)}>
+        <button
+          type="button"
+          className="button"
+          disabled={disabled}
+          title="Store the live spectrum into slot A as a playable snapshot"
+          onClick={() => onCapture('A', captureMode)}
+        >
           Capture → A
         </button>
-        <button type="button" className="button" disabled={disabled} onClick={() => onCapture('B', captureMode)}>
+        <button
+          type="button"
+          className="button"
+          disabled={disabled}
+          title="Store the live spectrum into slot B as a playable snapshot"
+          onClick={() => onCapture('B', captureMode)}
+        >
           Capture → B
         </button>
       </div>
@@ -86,20 +98,39 @@ export function CapturePanel({
           className="button"
           aria-pressed={liveFrozen}
           disabled={disabled}
+          title="Hold the live spectrum still so it stops following the input"
           onClick={() => onFreeze(!liveFrozen)}
         >
           {liveFrozen ? 'Unfreeze' : 'Freeze'} live
         </button>
-        <button type="button" className="button" disabled={disabled} onClick={onClearLive}>
+        <button
+          type="button"
+          className="button"
+          disabled={disabled}
+          title="Discard the live spectrum and start listening fresh"
+          onClick={onClearLive}
+        >
           Clear live
         </button>
       </div>
 
       <div className="capture__slots">
-        <button type="button" className="chip" disabled={disabled} onClick={onSwap}>
+        <button
+          type="button"
+          className="chip"
+          disabled={disabled}
+          title="Exchange the snapshots in slots A and B"
+          onClick={onSwap}
+        >
           Swap A ⇄ B
         </button>
-        <button type="button" className="chip" disabled={disabled} onClick={() => onCopy('A', 'B')}>
+        <button
+          type="button"
+          className="chip"
+          disabled={disabled}
+          title="Duplicate slot A into slot B"
+          onClick={() => onCopy('A', 'B')}
+        >
           Copy A → B
         </button>
       </div>

@@ -237,15 +237,19 @@ h2 {
   align-items: baseline;
   gap: 13px;
 }
-/* The brand mark reads as a slit aperture: the full spectrum dispersed through
-   a thin vertical line, the way light enters a spectrometer. */
+/* The brand mark — the "Dispersion" logo (inline SVG): a collimated beam
+   refracting through a prism into the discrete emission-line spectrum. Kept
+   crisp (no glow) so it reads exactly like the approved preview icon; a very
+   faint glow is applied only on hover for a subtle backlit cue. */
 .topbar__mark {
-  width: 5px;
-  height: 22px;
-  border-radius: 1px;
-  background: var(--spectrum);
+  display: block;
+  width: 30px;
+  height: 30px;
   align-self: center;
-  box-shadow: 0 0 14px var(--violet-glow), 0 0 22px var(--magenta-glow);
+  flex: none;
+}
+.topbar__brand:hover .topbar__mark {
+  filter: drop-shadow(0 0 3px var(--cyan-glow));
 }
 /* The MSPECTR nameplate — engraved into the faceplate. Big Shoulders at full
    weight, uppercased and tightly set so it reads as milled signage, with a

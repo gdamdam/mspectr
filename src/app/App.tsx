@@ -36,7 +36,7 @@ import { exportInstrumentJson, importInstrumentJson } from '../persistence/expor
 import { createInitialState, reducer, hasLiveDerivedSnapshot, type Preferences } from './state'
 import { useEngine } from './useEngine'
 import { SpectralDisplay } from '../visualization/SpectralDisplay'
-import { SourcePanel } from '../components/SourcePanel'
+import { SourcePanel, soundLabel } from '../components/SourcePanel'
 import { CapturePanel } from '../components/CapturePanel'
 import { SnapshotSlots } from '../components/SnapshotSlots'
 import { MorphControl } from '../components/MorphControl'
@@ -395,36 +395,57 @@ export function App() {
             aria-hidden="true"
             focusable="false"
           >
-            {/* incoming white beam */}
-            <line x1="8" y1="70" x2="48" y2="70" stroke="var(--text)" strokeWidth="5" strokeLinecap="round" />
-            {/* the prism */}
+            {/* Geometry flattened directly from the approved preview icon
+                (logo-1-icon.svg: translate(14,22) scale(0.95)) so the topbar
+                mark matches the chosen concept pixel-for-pixel. */}
+            {/* incoming collimated beam */}
+            <line x1="8.3" y1="67.6" x2="46.3" y2="67.6" stroke="var(--text)" strokeWidth="4.75" strokeLinecap="round" />
+            {/* the prism (its left face reads as the 'm' vertex) */}
             <path
-              d="M54 40 L84 108 L24 108 Z"
+              d="M52 39.1 L80.5 103.7 L23.5 103.7 Z"
               fill="var(--text)"
               fillOpacity="0.06"
               stroke="var(--text)"
-              strokeWidth="4"
+              strokeWidth="3.8"
               strokeLinejoin="round"
             />
-            {/* dispersed emission bands — discrete, calibrated, not a rainbow */}
-            <g strokeWidth="5" strokeLinecap="round">
-              <line x1="80" y1="90" x2="118" y2="56" stroke="var(--violet)" />
-              <line x1="81" y1="93" x2="120" y2="69" stroke="var(--cyan)" />
-              <line x1="82" y1="96" x2="121" y2="82" stroke="var(--green)" />
-              <line x1="82" y1="99" x2="120" y2="95" stroke="var(--amber)" />
-              <line x1="81" y1="102" x2="118" y2="108" stroke="var(--magenta)" />
+            {/* Dispersed emission bands — discrete, calibrated, not a rainbow.
+                Hues are the exact approved-preview values (#8b7bf0 / #46d4f0 /
+                #5fe488 / #ffc24b / #ef5d6c) so the mark matches the chosen
+                concept rather than drifting to the slightly different UI tokens. */}
+            <g strokeWidth="4.75" strokeLinecap="round">
+              <line x1="76.7" y1="86.6" x2="112.8" y2="54.3" stroke="#8b7bf0" />
+              <line x1="77.7" y1="89.5" x2="114.7" y2="66.7" stroke="#46d4f0" />
+              <line x1="78.6" y1="92.3" x2="115.6" y2="79.0" stroke="#5fe488" />
+              <line x1="78.6" y1="95.1" x2="114.7" y2="91.3" stroke="#ffc24b" />
+              <line x1="77.7" y1="98.0" x2="112.8" y2="103.7" stroke="#ef5d6c" />
             </g>
           </svg>
           <span className="topbar__name">
             mspectr<sup className="topbar__version">v{__APP_VERSION__}</sup>
           </span>
-          <span className="topbar__tag">capture a sound · play what it is made of</span>
+          <span
+            className="topbar__tag"
+            title="mspectr decomposes a captured sound into its spectral partials — emission-like lines — and lets you play it back as an instrument"
+          >
+            capture a sound · play what it is made of
+          </span>
         </div>
         <nav className="topbar__nav" aria-label="Tools">
-          <button type="button" className="chip" onClick={() => dispatch({ type: 'open-modal', modal: 'sessions' })}>
+          <button
+            type="button"
+            className="chip"
+            title="Save the current instrument and browse or load past sessions"
+            onClick={() => dispatch({ type: 'open-modal', modal: 'sessions' })}
+          >
             Sessions
           </button>
-          <button type="button" className="chip" onClick={() => dispatch({ type: 'open-modal', modal: 'share' })}>
+          <button
+            type="button"
+            className="chip"
+            title="Copy a link that recreates this patch — optionally with its captured spectra"
+            onClick={() => dispatch({ type: 'open-modal', modal: 'share' })}
+          >
             Share
           </button>
           <button
@@ -432,14 +453,25 @@ export function App() {
             className="chip"
             data-active={ui.recording || undefined}
             aria-pressed={ui.recording}
+            title="Record your performance to a downloadable WAV file"
             onClick={onRecord}
           >
             {ui.recording ? `Stop · ${ui.recordingSeconds.toFixed(0)}s` : 'Record'}
           </button>
-          <button type="button" className="chip" onClick={() => dispatch({ type: 'open-modal', modal: 'settings' })}>
+          <button
+            type="button"
+            className="chip"
+            title="Audio quality, motion/intensity, and input monitoring"
+            onClick={() => dispatch({ type: 'open-modal', modal: 'settings' })}
+          >
             Settings
           </button>
-          <button type="button" className="chip" onClick={() => dispatch({ type: 'open-modal', modal: 'help' })}>
+          <button
+            type="button"
+            className="chip"
+            title="What mspectr is and how to play it"
+            onClick={() => dispatch({ type: 'open-modal', modal: 'help' })}
+          >
             Help
           </button>
         </nav>
@@ -509,6 +541,7 @@ export function App() {
             presetId={patch.presetId}
             onStart={onStart}
             onSelectPreset={onSelectPreset}
+            onSelectSound={(id) => controls.setSourcePreset(id, soundLabel(id))}
             onPickFile={onPickFile}
             onEnableMic={onEnableMic}
             onEnableTab={onEnableTab}

@@ -45,4 +45,17 @@ describe('App — composition smoke test', () => {
     fireEvent.click(toggle)
     expect(toggle).toBeChecked()
   })
+
+  it('gives each toolbar tool a hover tooltip explaining what it does', () => {
+    render(<App />)
+    // Every tool button carries a title= so hovering explains the action.
+    for (const name of [/sessions/i, /share/i, /record/i, /settings/i, /help/i]) {
+      const btn = screen.getByRole('button', { name })
+      expect(btn).toHaveAttribute('title')
+      expect(btn.getAttribute('title')?.length ?? 0).toBeGreaterThan(0)
+    }
+    // The brand tagline explains what mspectr is on hover.
+    const tag = screen.getByText(/play what it is made of/i)
+    expect(tag.getAttribute('title')).toMatch(/spectral/i)
+  })
 })
