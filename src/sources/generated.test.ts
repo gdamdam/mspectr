@@ -59,11 +59,17 @@ function channel(buffer: AudioBuffer): Float32Array {
   return buffer.getChannelData(0)
 }
 
+// Determinism and per-id distinctness hold at any length, so these two checks
+// render a short slice via the `seconds` override (built for previews/tests —
+// see renderGeneratedBuffer's docstring). Full default lengths total ~83s of
+// audio; rendering them twice / comparing them pairwise blows the 5s timeout.
+const TEST_SECONDS = 0.5
+
 describe('renderGeneratedBuffer', () => {
   it('is deterministic: same id renders bit-identical samples', () => {
     for (const id of GENERATED_SOURCE_IDS) {
-      const a = channel(renderGeneratedBuffer(makeCtx(), id))
-      const b = channel(renderGeneratedBuffer(makeCtx(), id))
+      const a = channel(renderGeneratedBuffer(makeCtx(), id, TEST_SECONDS))
+      const b = channel(renderGeneratedBuffer(makeCtx(), id, TEST_SECONDS))
       expect(a.length).toBe(b.length)
       expect(a.length).toBeGreaterThan(0)
       // Float32Array equality is exact here — no RNG/Date.now nondeterminism.
@@ -73,7 +79,7 @@ describe('renderGeneratedBuffer', () => {
 
   it('produces distinct output per source id', () => {
     const samples: Record<string, Float32Array> = {}
-    for (const id of GENERATED_SOURCE_IDS) samples[id] = channel(renderGeneratedBuffer(makeCtx(), id))
+    for (const id of GENERATED_SOURCE_IDS) samples[id] = channel(renderGeneratedBuffer(makeCtx(), id, TEST_SECONDS))
     const ids = GENERATED_SOURCE_IDS
     for (let i = 0; i < ids.length; i++) {
       for (let j = i + 1; j < ids.length; j++) {
