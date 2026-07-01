@@ -4,6 +4,16 @@ All notable changes to mspectr are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-06-30
+
+### Added
+- Brand mark: the "Dispersion" logo (a beam refracting through a prism into the
+  emission-line spectrum) now renders as an inline SVG in the topbar, replacing
+  the placeholder aperture slit.
+- Hover tooltips (`title=`) explaining what each control does across the topbar
+  tools (Sessions, Share, Record, Settings, Help), the brand tagline, and the
+  Source, Capture, and PlayBar controls.
+
 ## [1.0.0] - 2026-06-30
 
 ### Added
