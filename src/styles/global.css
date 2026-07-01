@@ -726,6 +726,33 @@ h2 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Two clearly-separated groups inside the Source panel: Preset (a whole scene)
+   and Input source (the raw material). */
+.source__group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.source__grouplabel {
+  margin: 0;
+  font-family: var(--font-data);
+  font-size: var(--eyebrow);
+  font-weight: 600;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--text);
+}
+.source__grouphint {
+  color: var(--faint);
+  font-weight: 400;
+  letter-spacing: var(--track-tight);
+  text-transform: none;
+}
+.source__rule {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 4px 0;
+}
 /* Monitor toggle — silence the live source through the output (generated only). */
 .source__monitor {
   display: flex;

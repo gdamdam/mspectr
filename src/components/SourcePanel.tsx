@@ -112,27 +112,15 @@ export function SourcePanel({
         </p>
       )}
 
-      {audioStarted ? (
-        <label className="source__monitor">
-          <input
-            type="checkbox"
-            checked={monitor && sourceKind === 'generated'}
-            disabled={sourceKind !== 'generated'}
-            onChange={(e) => onToggleMonitor(e.target.checked)}
-          />
-          <span>
-            Monitor source
-            {sourceKind === 'generated' ? null : (
-              <span className="muted"> — mic/tab never monitor (feedback safety)</span>
-            )}
-          </span>
-        </label>
-      ) : null}
-
-      <label className="field" title="Load a built-in sound to analyse and play, as a starting point">
-        <span className="field__label">Preset</span>
+      {/* PRESET — a complete scene: sets a sound AND all the controls at once. */}
+      <div className="source__group">
+        <p className="source__grouplabel">
+          Preset <span className="source__grouphint">— a complete scene</span>
+        </p>
         <select
           className="select"
+          aria-label="Preset — loads a complete scene (a sound plus all the controls)"
+          title="Loads a complete scene: a sound plus all the controls"
           value={presetId ?? ''}
           onChange={(e) => onSelectPreset(e.target.value)}
           disabled={!audioStarted}
@@ -143,28 +131,38 @@ export function SourcePanel({
             </option>
           ))}
         </select>
-      </label>
+      </div>
 
-      <label className="field">
-        <span className="field__label">Sound</span>
-        <select
-          className="select"
-          defaultValue=""
-          onChange={(e) => {
-            if (e.target.value) onSelectSound(e.target.value as GeneratedSourceId)
-          }}
-          disabled={!audioStarted}
-        >
-          <option value="" disabled>
-            Load a built-in sound…
-          </option>
-          {GENERATED_SOURCE_IDS.map((id) => (
-            <option key={id} value={id}>
-              {soundLabel(id)}
+      <hr className="source__rule" />
+
+      {/* INPUT — the raw material the instrument analyses (built-in sound, file,
+          mic, or tab). Changing it leaves the controls untouched. */}
+      <div className="source__group">
+        <p className="source__grouplabel">
+          Input source <span className="source__grouphint">— what it listens to</span>
+        </p>
+
+        <label className="field">
+          <span className="field__label">Built-in sound</span>
+          <select
+            className="select"
+            defaultValue=""
+            title="Swap the raw sound being analysed, without changing the controls"
+            onChange={(e) => {
+              if (e.target.value) onSelectSound(e.target.value as GeneratedSourceId)
+            }}
+            disabled={!audioStarted}
+          >
+            <option value="" disabled>
+              Load a built-in sound…
             </option>
-          ))}
-        </select>
-      </label>
+            {GENERATED_SOURCE_IDS.map((id) => (
+              <option key={id} value={id}>
+                {soundLabel(id)}
+              </option>
+            ))}
+          </select>
+        </label>
 
       <div
         className="dropzone"
@@ -234,6 +232,24 @@ export function SourcePanel({
           >
             Tab audio
           </button>
+        ) : null}
+        </div>
+
+        {audioStarted ? (
+          <label className="source__monitor">
+            <input
+              type="checkbox"
+              checked={monitor && sourceKind === 'generated'}
+              disabled={sourceKind !== 'generated'}
+              onChange={(e) => onToggleMonitor(e.target.checked)}
+            />
+            <span>
+              Monitor source
+              {sourceKind === 'generated' ? null : (
+                <span className="muted"> — mic/tab never monitor (feedback safety)</span>
+              )}
+            </span>
+          </label>
         ) : null}
       </div>
     </section>
