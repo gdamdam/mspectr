@@ -8,7 +8,7 @@
 import { useRef, useState } from 'react'
 import type { ChangeEvent, DragEvent } from 'react'
 import { GENERATED_SOURCE_IDS } from '../audio/contracts'
-import type { GeneratedSourceId } from '../audio/contracts'
+import type { GeneratedSourceId, Preset } from '../audio/contracts'
 import { PRESETS } from '../performance/presets'
 import { supportsInputDeviceSelection, supportsTabCapture } from '../sources/capabilities'
 import type { AudioInputKind } from '../sources/types'
@@ -17,9 +17,28 @@ import type { AudioInputKind } from '../sources/types'
 export function soundLabel(id: string): string {
   return id
     .split('-')
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .map((w) => (w === 'fm' ? 'FM' : w.charAt(0).toUpperCase() + w.slice(1)))
     .join(' ')
 }
+
+/** Presets grouped by section, with both groups and names in alphabetical order. */
+const PRESET_GROUPS: { group: string; presets: Preset[] }[] = (() => {
+  const byGroup = new Map<string, Preset[]>()
+  for (const p of PRESETS) {
+    const list = byGroup.get(p.group)
+    if (list) list.push(p)
+    else byGroup.set(p.group, [p])
+  }
+  return Array.from(byGroup.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([group, presets]) => ({
+      group,
+      presets: presets.slice().sort((x, y) => x.name.localeCompare(y.name)),
+    }))
+})()
+
+/** Built-in source ids sorted by display label. */
+const SORTED_SOUND_IDS = GENERATED_SOURCE_IDS.slice().sort((a, b) => soundLabel(a).localeCompare(soundLabel(b)))
 
 export interface SourcePanelProps {
   audioStarted: boolean
@@ -125,10 +144,14 @@ export function SourcePanel({
           onChange={(e) => onSelectPreset(e.target.value)}
           disabled={!audioStarted}
         >
-          {PRESETS.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.group} — {p.name}
-            </option>
+          {PRESET_GROUPS.map(({ group, presets }) => (
+            <optgroup key={group} label={group}>
+              {presets.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
       </div>
@@ -156,7 +179,7 @@ export function SourcePanel({
             <option value="" disabled>
               Load a built-in sound…
             </option>
-            {GENERATED_SOURCE_IDS.map((id) => (
+            {SORTED_SOUND_IDS.map((id) => (
               <option key={id} value={id}>
                 {soundLabel(id)}
               </option>
