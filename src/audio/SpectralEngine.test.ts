@@ -430,6 +430,36 @@ describe('SpectralEngine', () => {
     expect(differs).toBe(true)
   })
 
+  it('capture after freeze reflects the frozen spectrum, not later input', () => {
+    // Freeze on a low tone, then feed a very different high tone; the capture
+    // must hold the frozen (low) spectrum. Guards the "capture ignores freeze"
+    // regression.
+    const e = new SpectralEngine(SR, 'normal')
+    let peakBin = -1
+    e.setOnCaptured((_s, snap) => {
+      let m = 0
+      let idx = 0
+      for (let k = 0; k < snap.binCount; k++) {
+        if (snap.magnitude[k] > m) {
+          m = snap.magnitude[k]
+          idx = k
+        }
+      }
+      peakBin = idx
+    })
+    e.setParams({ ...DEFAULT_PARAMS })
+    run(e, 60, 220) // establish a 220 Hz live frame
+    e.setParams({ ...DEFAULT_PARAMS, freeze: true })
+    e.freezeLive(true)
+    run(e, 40, 3000) // source moves to 3000 Hz while frozen
+    e.capture('A', 'frame')
+    run(e, 4, 3000)
+    // Expected 220 Hz bin ≈ 220 / (SR/fftSize) = 220 / (48000/2048) ≈ 9.4.
+    const binFor = (hz: number) => Math.round(hz / (SR / 2048))
+    expect(Math.abs(peakBin - binFor(220))).toBeLessThan(binFor(220) * 0.5 + 2)
+    expect(peakBin).toBeLessThan(binFor(3000)) // definitely not the new tone
+  })
+
   it('attack transient adds decaying onset energy within the ceiling', () => {
     const e = new SpectralEngine(SR, 'normal')
     e.setParams({ ...DEFAULT_PARAMS, reverbAmount: 0, attack: 0.05, release: 0.1, transient: 1 })

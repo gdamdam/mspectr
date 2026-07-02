@@ -68,6 +68,7 @@ Computer-keyboard input must be enabled in the instrument. Shortcuts are ignored
 | `K O L P ;` | continue into the next octave |
 | `Z` / `X` | octave down / up |
 | `C` / `V` | velocity down / up |
+| `Space` | freeze / unfreeze the live spectrum |
 | `Esc` | close the active dialog |
 
 ## Architecture

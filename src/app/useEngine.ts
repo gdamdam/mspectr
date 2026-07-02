@@ -206,6 +206,15 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
       if (e.metaKey || e.ctrlKey || e.altKey) return
+      // Space toggles live freeze — a one-touch "capture the moment" gesture.
+      if (e.code === 'Space') {
+        e.preventDefault()
+        if (e.repeat) return
+        const next = !stateRef.current.patch.params.freeze
+        engine.freezeLive(next)
+        dispatch({ type: 'edit-param', key: 'freeze', value: next })
+        return
+      }
       if (keyboardRef.current?.handleKeyDown(e.key, e.repeat)) e.preventDefault()
     }
     const onUp = (e: KeyboardEvent) => {
@@ -217,7 +226,7 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
       window.removeEventListener('keydown', onDown)
       window.removeEventListener('keyup', onUp)
     }
-  }, [stateRef])
+  }, [stateRef, engine, dispatch])
 
   // --- source swapping ------------------------------------------------------
   const swapSource = useCallback(

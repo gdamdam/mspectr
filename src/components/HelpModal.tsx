@@ -28,6 +28,10 @@ export function HelpModal({ onClose }: HelpModalProps) {
           </li>
         </ol>
         <p className="muted">
+          Press <kbd>Space</kbd> to freeze or unfreeze the live spectrum on the fly — a one-touch way to catch a moment
+          before capturing it.
+        </p>
+        <p className="muted">
           Captures from a microphone or tab are marked <em>live-derived</em>. Sharing them in a link asks for explicit
           consent first.
         </p>
