@@ -63,4 +63,35 @@ describe('note-playing flow — quantization + octave', () => {
     act(() => result.result.current.controls.noteOff(99))
     expect(noteOffCalls(engine)).toEqual([])
   })
+
+  it('keeps a scale-collided note held until every raw key releases', () => {
+    const { engine, result } = setup({ scale: 'major' })
+    act(() => result.result.current.controls.noteOn(60, 100))
+    act(() => result.result.current.controls.noteOn(61, 90))
+    expect(noteOnCalls(engine).map((c) => c.note)).toEqual([60, 60])
+    act(() => result.result.current.controls.noteOff(60))
+    expect(noteOffCalls(engine)).toEqual([])
+    act(() => result.result.current.controls.noteOff(61))
+    expect(noteOffCalls(engine)).toEqual([60])
+  })
+
+  it('panic on window blur cannot recurse and resets engine state once', () => {
+    const { engine, result } = setup()
+    act(() => result.result.current.controls.noteOn(60, 100))
+    act(() => window.dispatchEvent(new Event('blur')))
+    expect(engine.calls.filter((c) => c.method === 'panic')).toHaveLength(1)
+    act(() => result.result.current.controls.noteOff(60))
+    expect(noteOffCalls(engine)).toEqual([])
+  })
+
+  it('attaches source provenance to capture commands', () => {
+    const { engine, result } = setup()
+    result.result.current.stateRef.current.ui.sourceKind = 'microphone'
+    result.result.current.stateRef.current.ui.sourceLabel = 'Studio mic'
+    act(() => result.result.current.controls.capture('A', 'frame'))
+    const call = engine.calls.find((c) => c.method === 'capture')
+    expect(call?.args[0]).toBe('A')
+    expect(call?.args[2]).toMatchObject({ sourceLabel: 'Studio mic', isLiveDerived: true })
+    expect((call?.args[2] as { capturedAt: number }).capturedAt).toBeGreaterThan(0)
+  })
 })

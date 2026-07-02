@@ -75,6 +75,7 @@ interface Slot {
   filled: boolean
   baseFrequency: number
   sourceLabel: string
+  capturedAt: number
   isLiveDerived: boolean
 }
 
@@ -127,6 +128,8 @@ export class SpectralEngine {
   // Live frame + snapshots.
   private liveMag!: Float32Array
   private livePhase!: Float32Array
+  private hasLiveFrame = false
+  private analysisInput = new Float32Array(128)
   private frozenLive = false
   private slotA!: Slot
   private slotB!: Slot
@@ -214,6 +217,7 @@ export class SpectralEngine {
     this.auditionVoice = new Voice(this.fft, hop, binCount, (this.seed ^ 0xa5a5a5a5) >>> 0)
     this.liveMag = new Float32Array(binCount)
     this.livePhase = new Float32Array(binCount)
+    this.hasLiveFrame = false
     this.slotA = this.makeSlot(binCount)
     this.slotB = this.makeSlot(binCount)
     this.s1 = new Float32Array(binCount)
@@ -251,6 +255,7 @@ export class SpectralEngine {
       filled: false,
       baseFrequency: 0,
       sourceLabel: '',
+      capturedAt: 0,
       isLiveDerived: false,
     }
   }
@@ -259,6 +264,7 @@ export class SpectralEngine {
 
   setParams(params: SpectralParams): void {
     this.params = params
+    this.frozenLive = params.freeze
   }
 
   setPolyphony(value: number): void {
@@ -276,6 +282,8 @@ export class SpectralEngine {
 
   setQuality(quality: QualityMode): void {
     if (quality === this.quality) return
+    const savedA = this.slotA.filled ? this.snapshotOf(this.slotA) : null
+    const savedB = this.slotB.filled ? this.snapshotOf(this.slotB) : null
     this.quality = quality
     const cfg = qualityConfig(quality)
     this.panic()
@@ -285,6 +293,8 @@ export class SpectralEngine {
     this.binCount = (cfg.fftSize >> 1) + 1
     this.polyphony = Math.min(this.polyphony, cfg.maxVoices)
     this.build()
+    if (savedA) this.loadSnapshot('A', savedA)
+    if (savedB) this.loadSnapshot('B', savedB)
   }
 
   // --- Notes -------------------------------------------------------------
@@ -336,6 +346,7 @@ export class SpectralEngine {
     // Also hard-stop any voice the allocator no longer tracks.
     for (const v of this.voices) v.reset()
     this.auditionVoice.reset()
+    this.bendSemitones = 0
   }
 
   private releaseVoiceImmediate(idx: number): void {
@@ -351,6 +362,18 @@ export class SpectralEngine {
     this.pendingLabel = sourceLabel
     this.pendingLive = isLiveDerived
     this.pendingAt = capturedAt
+    if (this.frozenLive) {
+      const target = slot === 'A' ? this.slotA : this.slotB
+      captureFrame(this.liveMag, this.livePhase, target.mag, target.phase)
+      target.framesMag.set(target.mag)
+      target.framesPhase.set(target.phase)
+      target.frameCount = 1
+      target.frameHop = this.hop
+      this.averaging = false
+      this.sequencing = false
+      this.finalizeCapture(target)
+      return
+    }
     if (mode === 'average') {
       this.averager.reset()
       this.averaging = true
@@ -393,6 +416,7 @@ export class SpectralEngine {
     target.filled = true
     target.baseFrequency = snap.baseFrequency
     target.sourceLabel = snap.sourceLabel
+    target.capturedAt = snap.capturedAt
     target.isLiveDerived = snap.isLiveDerived
   }
 
@@ -435,6 +459,7 @@ export class SpectralEngine {
     this.liveMag.fill(0)
     this.livePhase.fill(0)
     this.analyzer.reset()
+    this.hasLiveFrame = false
   }
 
   setMonitor(_on: boolean): void {
@@ -465,11 +490,18 @@ export class SpectralEngine {
   /** Process one render block. `input` is mono; `outL`/`outR` are written. */
   render(input: Float32Array, outL: Float32Array, outR: Float32Array): void {
     // 1. Analysis on the incoming source.
-    const frames = this.analyzer.process(input)
+    if (this.analysisInput.length !== input.length) this.analysisInput = new Float32Array(input.length)
+    const inputGain = Math.pow(10, this.params.inputGainDb / 20)
+    for (let i = 0; i < input.length; i++) {
+      const sample = input[i]
+      this.analysisInput[i] = Number.isFinite(sample) ? sample * inputGain : 0
+    }
+    const frames = this.analyzer.process(this.analysisInput)
     if (frames > 0) {
-      if (!this.frozenLive) {
+      if (!this.frozenLive || !this.hasLiveFrame) {
         this.liveMag.set(this.analyzer.magnitude)
         this.livePhase.set(this.analyzer.phase)
+        this.hasLiveFrame = true
       }
       this.handleCapture()
     }
@@ -489,6 +521,17 @@ export class SpectralEngine {
     if (this.captureSlot === null) return
     const slot = this.captureSlot === 'A' ? this.slotA : this.slotB
     const bc = this.binCount
+    if (this.frozenLive) {
+      captureFrame(this.liveMag, this.livePhase, slot.mag, slot.phase)
+      slot.framesMag.set(slot.mag.subarray(0, bc))
+      slot.framesPhase.set(slot.phase.subarray(0, bc))
+      slot.frameCount = 1
+      slot.frameHop = this.hop
+      this.averaging = false
+      this.sequencing = false
+      this.finalizeCapture(slot)
+      return
+    }
     if (this.captureMode === 'evolving' && this.sequencing) {
       // Living capture: accumulate a frame sequence, then store it whole.
       this.sequencer.add(this.analyzer.magnitude, this.analyzer.phase)
@@ -525,15 +568,16 @@ export class SpectralEngine {
     slot.filled = true
     slot.baseFrequency = estimateFundamental(slot.mag, this.sampleRate, this.fftSize)
     slot.sourceLabel = this.pendingLabel
+    slot.capturedAt = this.pendingAt
     slot.isLiveDerived = this.pendingLive
     const which = this.captureSlot as SnapshotSlot
     this.captureSlot = null
     if (this.onCaptured) {
-      this.onCaptured(which, this.snapshotOf(slot, this.pendingAt))
+      this.onCaptured(which, this.snapshotOf(slot))
     }
   }
 
-  private snapshotOf(slot: Slot, capturedAt: number): SpectralSnapshot {
+  private snapshotOf(slot: Slot): SpectralSnapshot {
     const fc = Math.max(1, slot.frameCount)
     const len = fc * this.binCount
     return {
@@ -547,7 +591,7 @@ export class SpectralEngine {
       magnitude: slot.framesMag.slice(0, len),
       phase: slot.framesPhase.slice(0, len),
       sourceLabel: slot.sourceLabel,
-      capturedAt,
+      capturedAt: slot.capturedAt,
       isLiveDerived: slot.isLiveDerived,
     }
   }

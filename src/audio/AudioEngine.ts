@@ -197,8 +197,12 @@ export class AudioEngine implements AudioEngineApi {
     this.post({ type: 'set-polyphony', value })
   }
 
-  capture(slot: SnapshotSlot, mode: CaptureMode): void {
-    this.post({ type: 'capture', slot, mode })
+  capture(
+    slot: SnapshotSlot,
+    mode: CaptureMode,
+    metadata = { sourceLabel: '', capturedAt: 0, isLiveDerived: false },
+  ): void {
+    this.post({ type: 'capture', slot, mode, ...metadata })
   }
 
   loadSnapshot(slot: SnapshotSlot, snapshot: SpectralSnapshot): void {

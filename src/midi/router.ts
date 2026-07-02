@@ -212,6 +212,7 @@ export class MidiRouter {
       case 'allNotesOff':
         // CC 120 / 123 — release everything (channel-mode panic).
         this.panic()
+        this.callbacks.onPanic?.()
         break
       case 'clock':
       case 'start':
@@ -287,17 +288,24 @@ export class MidiRouter {
       this.sustained.delete(note)
       if (!this.noteRefs.has(note)) this.callbacks.onNoteOff?.(note)
     }
+    // Pitch bend and sustain are global at the engine boundary. A disconnected
+    // controller cannot send the matching centre/pedal-up messages, so reset.
+    this.sustainDown = false
+    this.callbacks.onSustain?.(false)
+    this.callbacks.onPitchBend?.(0)
     this.detachInput(inputId)
   }
 
-  /** Hard panic: force-release every tracked note and notify the consumer. */
+  /** Hard panic: force-release router state. Notification is owned by callers. */
   panic(): void {
-    const notes = [...this.noteRefs.keys()]
+    const notes = new Set([...this.noteRefs.keys(), ...this.sustained])
     this.owners.clear()
     this.noteRefs.clear()
     this.sustained.clear()
+    this.sustainDown = false
     for (const note of notes) this.callbacks.onNoteOff?.(note)
-    this.callbacks.onPanic?.()
+    this.callbacks.onSustain?.(false)
+    this.callbacks.onPitchBend?.(0)
   }
 
   /** Number of currently sounding (or sustain-held) engine notes. */

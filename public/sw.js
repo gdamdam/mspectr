@@ -14,11 +14,13 @@
 //   - cross-origin         → bypass (let the browser handle it)
 
 // Bump this whenever the caching strategy changes; activate() purges older caches.
-const SHELL_CACHE = 'mspectr-shell-v1'
+// Replaced with a hash of the emitted asset names by vite.config.ts.
+const BUILD_FINGERPRINT = '__BUILD_FINGERPRINT__'
+const SHELL_CACHE = `mspectr-shell-${BUILD_FINGERPRINT}`
 // Runtime cache is size-capped: hashed bundles from past deploys would otherwise
 // accumulate forever (sw.js never changes between deploys, so the cache name
 // alone can't evict them). Trimming to a fixed budget bounds disk usage.
-const RUNTIME_CACHE = 'mspectr-runtime-v1'
+const RUNTIME_CACHE = `mspectr-runtime-${BUILD_FINGERPRINT}`
 const RUNTIME_MAX_ENTRIES = 64
 
 // Root deployment: scope is the origin root, so APP_BASE is '/'. Derived from the

@@ -330,6 +330,19 @@ describe('WavRecorder (ScriptProcessor fallback)', () => {
     expect(w.dataSize).toBe(128 * 2 * 2)
   })
 
+  it('shares one finalization across concurrent stop calls', async () => {
+    const { ctx, lastScript } = makeCtx(48000)
+    const rec = new WavRecorder(ctx, new FakeAudioNode() as unknown as AudioNode)
+    await rec.start()
+    lastScript()!.emit([new Float32Array(128).fill(0.25), new Float32Array(128).fill(0.25)])
+    const first = rec.stop()
+    const second = rec.stop()
+    expect(second).toBe(first)
+    const [a, b] = await Promise.all([first, second])
+    expect(b).toBe(a)
+    expect(parseWav(await a.arrayBuffer()).dataSize).toBe(128 * 2 * 2)
+  })
+
   it('reports progress and caps capture at maxSeconds', async () => {
     const { ctx, lastScript } = makeCtx(1000) // 1000 Hz → easy frame math
     const tap = new FakeAudioNode()
@@ -375,5 +388,33 @@ describe('WavRecorder (ScriptProcessor fallback)', () => {
     expect(addSpy).toHaveBeenCalledWith('pagehide', expect.any(Function))
     rec.dispose()
     expect(removeSpy).toHaveBeenCalledWith('pagehide', expect.any(Function))
+  })
+
+  it('memoizes recorder worklet modules per AudioContext', async () => {
+    class FakeWorkletNode extends FakeAudioNode {
+      port = { onmessage: null, postMessage: vi.fn() }
+    }
+    vi.stubGlobal('AudioWorkletNode', FakeWorkletNode)
+    const makeWorkletCtx = () => {
+      const addModule = vi.fn(() => Promise.resolve())
+      const ctx = {
+        sampleRate: 48000,
+        audioWorklet: { addModule },
+      } as unknown as AudioContext
+      return { ctx, addModule }
+    }
+    const a = makeWorkletCtx()
+    const b = makeWorkletCtx()
+    const a1 = new WavRecorder(a.ctx, new FakeAudioNode() as unknown as AudioNode)
+    await a1.start()
+    a1.cancel()
+    const a2 = new WavRecorder(a.ctx, new FakeAudioNode() as unknown as AudioNode)
+    await a2.start()
+    a2.cancel()
+    const b1 = new WavRecorder(b.ctx, new FakeAudioNode() as unknown as AudioNode)
+    await b1.start()
+    b1.cancel()
+    expect(a.addModule).toHaveBeenCalledTimes(1)
+    expect(b.addModule).toHaveBeenCalledTimes(1)
   })
 })

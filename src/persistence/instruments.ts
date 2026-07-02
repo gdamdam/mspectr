@@ -14,8 +14,10 @@ import {
   sanitizePatch,
   type SavedInstrument,
 } from '../audio/contracts'
-import { INSTRUMENTS_STORE, withStore } from './db'
+import { INSTRUMENTS_STORE, SNAPSHOTS_STORE, withStore, withTransaction } from './db'
 import { deleteSnapshot } from './snapshots'
+import { serializeSnapshot } from '../sharing/snapshotCodec'
+import type { SpectralSnapshot } from '../audio/contracts'
 
 const DEFAULT_INSTRUMENT_NAME = 'Untitled'
 
@@ -85,19 +87,69 @@ export async function saveInstrument(inst: SavedInstrument): Promise<void> {
 }
 
 export async function listInstruments(): Promise<SavedInstrument[]> {
-  // getAllKeys + getAll keep key alignment so deserialize gets the right id.
-  const keys = await withStore<IDBValidKey[]>(INSTRUMENTS_STORE, 'readonly', (store) =>
-    store.getAllKeys(),
-  )
-  const values = await withStore<unknown[]>(INSTRUMENTS_STORE, 'readonly', (store) =>
-    store.getAll(),
-  )
+  // Keys and values must come from the same transaction so another tab cannot
+  // mutate the store between the two reads and misalign the records.
+  const [keys, values] = await withTransaction([INSTRUMENTS_STORE], 'readonly', (tx) => {
+    const store = tx.objectStore(INSTRUMENTS_STORE)
+    const keyRequest = store.getAllKeys()
+    const valueRequest = store.getAll()
+    return () => [keyRequest.result, valueRequest.result] as [IDBValidKey[], unknown[]]
+  })
   const out: SavedInstrument[] = []
   for (let i = 0; i < values.length; i++) {
     const id = typeof keys[i] === 'string' ? (keys[i] as string) : String(keys[i])
     out.push(deserializeInstrument(values[i], id))
   }
   return out
+}
+
+/** Atomically save an instrument and the snapshots it owns. */
+export async function saveInstrumentBundle(
+  inst: SavedInstrument,
+  snapA: SpectralSnapshot | null,
+  snapB: SpectralSnapshot | null,
+): Promise<void> {
+  if (typeof inst.id !== 'string' || inst.id.length === 0) {
+    throw new Error('saveInstrumentBundle: instrument id must be a non-empty string')
+  }
+  const record = serializeInstrument(inst)
+  await withTransaction([INSTRUMENTS_STORE, SNAPSHOTS_STORE], 'readwrite', (tx) => {
+    const instruments = tx.objectStore(INSTRUMENTS_STORE)
+    const snapshots = tx.objectStore(SNAPSHOTS_STORE)
+    if (record.snapshotRefA && snapA) snapshots.put(serializeSnapshot(snapA), record.snapshotRefA)
+    if (record.snapshotRefB && snapB) snapshots.put(serializeSnapshot(snapB), record.snapshotRefB)
+    instruments.put(record, record.id)
+    return () => undefined
+  })
+}
+
+/** Remove snapshot records that no surviving instrument references. */
+export async function pruneOrphanSnapshots(): Promise<number> {
+  return withTransaction([INSTRUMENTS_STORE, SNAPSHOTS_STORE], 'readwrite', (tx) => {
+    const instrumentsRequest = tx.objectStore(INSTRUMENTS_STORE).getAll()
+    const snapshots = tx.objectStore(SNAPSHOTS_STORE)
+    const keysRequest = snapshots.getAllKeys()
+    let removed = 0
+    const prune = () => {
+      if (instrumentsRequest.readyState !== 'done' || keysRequest.readyState !== 'done') return
+      const referenced = new Set<string>()
+      for (const raw of instrumentsRequest.result as unknown[]) {
+        const r = isRecord(raw) ? raw : {}
+        if (typeof r.snapshotRefA === 'string') referenced.add(r.snapshotRefA)
+        if (typeof r.snapshotRefB === 'string') referenced.add(r.snapshotRefB)
+      }
+      for (const key of keysRequest.result) {
+        const id = String(key)
+        if (!referenced.has(id)) {
+          snapshots.delete(key)
+          removed++
+        }
+      }
+    }
+    instrumentsRequest.onsuccess = prune
+    keysRequest.onsuccess = prune
+    return () => removed
+  })
 }
 
 export async function loadInstrument(id: string): Promise<SavedInstrument | null> {

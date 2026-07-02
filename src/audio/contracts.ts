@@ -373,7 +373,14 @@ export type EngineCommand =
   | { type: 'set-quality'; quality: QualityMode }
   | { type: 'set-seed'; seed: number }
   | { type: 'set-polyphony'; value: number }
-  | { type: 'capture'; slot: SnapshotSlot; mode: CaptureMode }
+  | {
+      type: 'capture'
+      slot: SnapshotSlot
+      mode: CaptureMode
+      sourceLabel: string
+      capturedAt: number
+      isLiveDerived: boolean
+    }
   | { type: 'load-snapshot'; slot: SnapshotSlot; snapshot: SpectralSnapshot }
   | { type: 'clear-snapshot'; slot: SnapshotSlot }
   | { type: 'swap-snapshots' }

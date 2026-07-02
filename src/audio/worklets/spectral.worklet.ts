@@ -57,7 +57,13 @@ class SpectralProcessor extends AudioWorkletProcessor {
         this.engine.setPolyphony(cmd.value)
         break
       case 'capture':
-        this.engine.capture(cmd.slot, cmd.mode)
+        this.engine.capture(
+          cmd.slot,
+          cmd.mode,
+          cmd.sourceLabel,
+          cmd.isLiveDerived,
+          cmd.capturedAt,
+        )
         break
       case 'load-snapshot':
         this.engine.loadSnapshot(cmd.slot, cmd.snapshot)

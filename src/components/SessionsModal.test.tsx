@@ -9,12 +9,14 @@ const deleteInstrument = vi.fn().mockResolvedValue(undefined)
 const listInstruments = vi.fn()
 const renameInstrument = vi.fn().mockResolvedValue(undefined)
 const duplicateInstrument = vi.fn().mockResolvedValue(null)
+const pruneOrphanSnapshots = vi.fn().mockResolvedValue(0)
 
 vi.mock('../persistence/instruments', () => ({
   deleteInstrument: (...a: unknown[]) => deleteInstrument(...a),
   listInstruments: () => listInstruments(),
   renameInstrument: (...a: unknown[]) => renameInstrument(...a),
   duplicateInstrument: (...a: unknown[]) => duplicateInstrument(...a),
+  pruneOrphanSnapshots: () => pruneOrphanSnapshots(),
 }))
 
 import { SessionsModal } from './SessionsModal'

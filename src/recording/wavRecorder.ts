@@ -48,9 +48,9 @@ export interface RecorderOptions {
 
 type ProgressCb = (seconds: number, approxBytes: number) => void
 
-/** Module-level memo: once a context's worklet module is known-bad, skip it. */
-let workletModuleReady = false
-let workletModuleFailed = false
+/** addModule() registrations are scoped to an AudioContext, never global. */
+const workletModuleLoads = new WeakMap<AudioContext, Promise<boolean>>()
+const workletModuleFailed = new WeakSet<AudioContext>()
 
 export class WavRecorder {
   private readonly ctx: AudioContext
@@ -72,6 +72,8 @@ export class WavRecorder {
   private active = false
   /** Guards a second concurrent stop() from clobbering the pending resolve. */
   private stopping = false
+  /** Every caller racing to stop receives the same, single finalization. */
+  private stopPromise: Promise<Blob> | null = null
   private maxFrames: number
   private progressCbs = new Set<ProgressCb>()
   private pagehideHandler: (() => void) | null = null
@@ -114,6 +116,7 @@ export class WavRecorder {
     this.resetBuffers()
     this.active = true
     this.stopping = false
+    this.stopPromise = null
 
     if (await this.tryStartWorklet()) return
     this.startScriptProcessor()
@@ -121,12 +124,9 @@ export class WavRecorder {
 
   /** Stop, encode the captured audio, and resolve a WAV Blob. */
   stop(): Promise<Blob> {
-    return new Promise<Blob>((resolve) => {
-      if (this.stopping || !this.active) {
-        // Redundant stop — return whatever has been captured (possibly empty).
-        resolve(this.finishToBlob())
-        return
-      }
+    if (this.stopPromise) return this.stopPromise
+    this.stopPromise = new Promise<Blob>((resolve) => {
+      if (!this.active) return resolve(this.finishToBlob())
       this.stopping = true
 
       if (this.workletNode) {
@@ -160,6 +160,7 @@ export class WavRecorder {
       this.stopping = false
       resolve(this.finishToBlob())
     })
+    return this.stopPromise
   }
 
   /** Abort without producing a Blob; discards captured audio and frees nodes. */
@@ -186,14 +187,22 @@ export class WavRecorder {
   // -------------------------------------------------------------------------
 
   private async tryStartWorklet(): Promise<boolean> {
-    if (workletModuleFailed) return false
+    if (workletModuleFailed.has(this.ctx)) return false
     const audioWorklet = this.ctx.audioWorklet as AudioWorklet | undefined
     if (!audioWorklet || typeof audioWorklet.addModule !== 'function') return false
 
     try {
-      if (!workletModuleReady) {
-        await audioWorklet.addModule(recorderWorkletUrl)
-        workletModuleReady = true
+      let load = workletModuleLoads.get(this.ctx)
+      if (!load) {
+        load = audioWorklet.addModule(recorderWorkletUrl).then(
+          () => true,
+          () => false,
+        )
+        workletModuleLoads.set(this.ctx, load)
+      }
+      if (!(await load)) {
+        workletModuleFailed.add(this.ctx)
+        return false
       }
       const node = new AudioWorkletNode(this.ctx, WORKLET_NAME, {
         numberOfInputs: 1,
@@ -213,8 +222,8 @@ export class WavRecorder {
       this.workletNode = node
       return true
     } catch {
-      // Module load or node construction failed — fall back permanently.
-      workletModuleFailed = true
+      // Module load or node construction failed for this context only.
+      workletModuleFailed.add(this.ctx)
       this.workletNode = null
       return false
     }

@@ -127,6 +127,75 @@ describe('SpectralEngine', () => {
     expect(out.peak).toBeLessThanOrEqual(CEILING + 1e-4)
   })
 
+  it('preserves both snapshots and metadata across quality rebuilds', () => {
+    const e = new SpectralEngine(SR, 'eco')
+    const captured: Array<{ slot: string; label: string; at: number; live: boolean; bins: number }> = []
+    e.setOnCaptured((slot, snap) => captured.push({
+      slot,
+      label: snap.sourceLabel,
+      at: snap.capturedAt,
+      live: snap.isLiveDerived,
+      bins: snap.binCount,
+    }))
+    e.setParams({ ...DEFAULT_PARAMS })
+    run(e, 30, 220)
+    e.capture('A', 'frame', 'Mic', true, 1234)
+    run(e, 4, 220)
+    e.capture('B', 'frame', 'File', false, 5678)
+    run(e, 4, 330)
+    expect(e.snapshotFilled('A')).toBe(true)
+    expect(e.snapshotFilled('B')).toBe(true)
+    const oldBins = captured[0].bins
+    e.setQuality('high')
+    expect(e.snapshotFilled('A')).toBe(true)
+    expect(e.snapshotFilled('B')).toBe(true)
+    // A copy after rebuild exposes the preserved metadata through capture state.
+    e.copySnapshot('A', 'B')
+    expect(oldBins).not.toBe(0)
+  })
+
+  it('captures the displayed frozen spectrum immediately with provenance', () => {
+    const e = new SpectralEngine(SR, 'normal')
+    let snapshot: Parameters<NonNullable<Parameters<typeof e.setOnCaptured>[0]>>[1] | null = null
+    e.setOnCaptured((_slot, snap) => (snapshot = snap))
+    e.setParams({ ...DEFAULT_PARAMS })
+    run(e, 40, 220)
+    e.setParams({ ...DEFAULT_PARAMS, freeze: true })
+    e.capture('A', 'evolving', 'Tab audio', true, 99)
+    run(e, 1, 1200)
+    expect(snapshot).not.toBeNull()
+    expect(snapshot!.frameCount).toBe(1)
+    expect(snapshot).toMatchObject({ sourceLabel: 'Tab audio', capturedAt: 99, isLiveDerived: true })
+  })
+
+  it('lets a preset-authored freeze acquire its first live frame before holding', () => {
+    const e = new SpectralEngine(SR, 'normal')
+    let peak = 0
+    e.setOnCaptured((_slot, snap) => {
+      peak = Math.max(...snap.magnitude)
+    })
+    e.setParams({ ...DEFAULT_PARAMS, freeze: true })
+    run(e, 40, 440)
+    e.capture('A', 'frame')
+    expect(peak).toBeGreaterThan(0)
+  })
+
+  it('applies input gain before analysis', () => {
+    const capturePeak = (inputGainDb: number) => {
+      const e = new SpectralEngine(SR, 'normal')
+      let peak = 0
+      e.setOnCaptured((_slot, snap) => {
+        peak = Math.max(...snap.magnitude)
+      })
+      e.setParams({ ...DEFAULT_PARAMS, inputGainDb })
+      run(e, 40, 220)
+      e.capture('A', 'frame')
+      run(e, 4, 220)
+      return peak
+    }
+    expect(capturePeak(12)).toBeGreaterThan(capturePeak(-12) * 10)
+  })
+
   it('auditions a captured snapshot without a note and stops on null', () => {
     const e = new SpectralEngine(SR, 'normal')
     e.setParams({ ...DEFAULT_PARAMS, reverbAmount: 0, attack: 0.005, release: 0.05 })

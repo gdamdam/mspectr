@@ -21,13 +21,20 @@ describe('reducer — preset + patch loading', () => {
     expect(s.patch.presetId).toBe(target.id)
     expect(s.ui.sourceKind).toBe('generated')
     expect(s.ui.sourceLabel).toBe(target.name)
-    expect(s.ui.liveFrozen).toBe(false)
+    expect(s.patch.params.freeze).toBe(false)
   })
 
   it('load-preset with an unknown id is a no-op', () => {
     const before = init()
     const after = reducer(before, { type: 'load-preset', presetId: 'does-not-exist' })
     expect(after).toBe(before)
+  })
+
+  it('retains an authored live freeze in frozen presets', () => {
+    const frozen = PRESETS.find((preset) => preset.patch.params.freeze)
+    expect(frozen).toBeDefined()
+    const s = reducer(init(), { type: 'load-preset', presetId: frozen!.id })
+    expect(s.patch.params.freeze).toBe(true)
   })
 
   it('load-patch sanitizes malformed shared-link input', () => {

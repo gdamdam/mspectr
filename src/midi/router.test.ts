@@ -236,6 +236,9 @@ describe('panic via CC 123', () => {
     input.send(0x90, 60, 100)
     router.panic()
     expect(cb.onNoteOff).toHaveBeenCalledWith(60)
+    expect(cb.onPanic).not.toHaveBeenCalled()
+    expect(cb.onSustain).toHaveBeenLastCalledWith(false)
+    expect(cb.onPitchBend).toHaveBeenLastCalledWith(0)
     expect(router.activeNoteCount).toBe(0)
     router.dispose()
   })
@@ -301,6 +304,8 @@ describe('hot-plug device removal', () => {
     expect(cb.onNoteOff).toHaveBeenCalledWith(60)
     expect(router.activeNoteCount).toBe(0)
     expect(cb.onDevicesChanged).toHaveBeenLastCalledWith([])
+    expect(cb.onPitchBend).toHaveBeenLastCalledWith(0)
+    expect(cb.onSustain).toHaveBeenLastCalledWith(false)
     router.dispose()
   })
 

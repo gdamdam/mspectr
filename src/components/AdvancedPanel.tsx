@@ -17,6 +17,7 @@ import {
   type SpectralParams,
 } from '../audio/contracts'
 import { Select } from './Select'
+import { useState } from 'react'
 
 export interface AdvancedPanelProps {
   open: boolean
@@ -96,6 +97,40 @@ const GROUPS: { title: string; fields: NumField[] }[] = [
 ]
 
 const QUALITIES: QualityMode[] = ['eco', 'normal', 'high']
+
+function SeedInput({ seed, onSeed }: { seed: number; onSeed: (seed: number) => void }) {
+  const [draft, setDraft] = useState(String(seed))
+  const commit = () => {
+    const value = Number(draft)
+    if (draft.trim() === '' || !Number.isFinite(value)) {
+      setDraft(String(seed))
+      return
+    }
+    const next = Math.max(0, Math.min(0xffffffff, Math.round(value)))
+    setDraft(String(next))
+    onSeed(next)
+  }
+  return (
+    <input
+      type="number"
+      className="input"
+      min={0}
+      max={0xffffffff}
+      step={1}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur()
+        if (e.key === 'Escape') {
+          setDraft(String(seed))
+          e.currentTarget.blur()
+        }
+      }}
+      aria-label="Deterministic seed"
+    />
+  )
+}
 
 export function AdvancedPanel({
   open,
@@ -199,16 +234,7 @@ export function AdvancedPanel({
             </div>
             <label className="field">
               <span className="field__label">Seed</span>
-              <input
-                type="number"
-                className="input"
-                min={0}
-                max={0xffffffff}
-                step={1}
-                value={seed}
-                onChange={(e) => onSeed(Number(e.target.value))}
-                aria-label="Deterministic seed"
-              />
+              <SeedInput key={seed} seed={seed} onSeed={onSeed} />
             </label>
           </fieldset>
         </div>

@@ -2,6 +2,9 @@ import react from '@vitejs/plugin-react'
 import type { Plugin } from 'vite'
 import { defineConfig } from 'vitest/config'
 import packageJson from './package.json' with { type: 'json' }
+import { createHash } from 'node:crypto'
+import { readFile, writeFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 
 // Emit a JSON list of the content-hashed build assets (JS/CSS/worklet) so the
 // service worker can precache them at install. The SW activates only after the
@@ -21,6 +24,16 @@ function precacheManifest(): Plugin {
         fileName: 'precache-manifest.json',
         source: JSON.stringify(assets),
       })
+    },
+    async writeBundle(options, bundle) {
+      const dir = typeof options.dir === 'string' ? options.dir : 'dist'
+      const swPath = resolve(dir, 'sw.js')
+      const fingerprint = createHash('sha256')
+        .update(Object.keys(bundle).sort().join('\n'))
+        .digest('hex')
+        .slice(0, 16)
+      const source = await readFile(swPath, 'utf8')
+      await writeFile(swPath, source.replaceAll('__BUILD_FINGERPRINT__', fingerprint))
     },
   }
 }

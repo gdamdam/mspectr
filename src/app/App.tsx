@@ -30,8 +30,8 @@ import {
 import { resolveParams } from '../performance/macros'
 import { getPreset } from '../performance/presets'
 import { decodePatchLink, decodeSnapshotLink } from '../sharing/patchLink'
-import { saveInstrument, loadInstrument } from '../persistence/instruments'
-import { getSnapshot, putSnapshot } from '../persistence/snapshots'
+import { loadInstrument, saveInstrumentBundle } from '../persistence/instruments'
+import { getSnapshot } from '../persistence/snapshots'
 import { exportInstrumentJson, importInstrumentJson } from '../persistence/exportImport'
 import { createInitialState, reducer, hasLiveDerivedSnapshot, type Preferences } from './state'
 import { useEngine } from './useEngine'
@@ -116,9 +116,6 @@ export function App() {
 
   // Cache of the actual snapshot data (heavy arrays) kept out of React.
   const snapDataRef = useRef<{ A: SpectralSnapshot | null; B: SpectralSnapshot | null }>({ A: null, B: null })
-  // Track the last saved/loaded instrument id so Save updates in place.
-  const currentInstrumentRef = useRef<string | null>(null)
-
   const controls = useEngine({ stateRef, dispatch })
   const [starting, setStarting] = useState(false)
   const [pendingMic, setPendingMic] = useState<{ deviceId?: string } | null>(null)
@@ -140,7 +137,9 @@ export function App() {
   // Any change to params/macros/xy/links/preset re-resolves and pushes.
   useEffect(() => {
     if (!ui.audioStarted) return
-    controls.engine.setParams(resolveParams(patch, mapping))
+    const params = resolveParams(patch, mapping)
+    controls.engine.setParams(params)
+    controls.setBendRange(params.bendRange)
   }, [controls.engine, ui.audioStarted, patch, mapping])
 
   useEffect(() => {
@@ -230,7 +229,7 @@ export function App() {
       const preset = getPreset(presetId)
       if (!preset) return
       dispatch({ type: 'load-preset', presetId })
-      controls.setSourcePreset(preset.source, preset.name)
+      controls.setSourcePreset(preset.source, preset.name, preset.patch.params.freeze)
     },
     [controls],
   )
@@ -305,32 +304,21 @@ export function App() {
   // --- sessions glue --------------------------------------------------------
   const onSaveSession = useCallback(async (name: string) => {
     const now = Date.now()
-    const existingId = currentInstrumentRef.current
-    const id = existingId ?? crypto.randomUUID()
-    // Updating in place must keep the original creation time; only a brand-new
-    // session stamps createdAt = now. updatedAt always advances.
-    let createdAt = now
-    if (existingId) {
-      const prev = await loadInstrument(existingId)
-      if (prev) createdAt = prev.createdAt
-    }
+    const id = crypto.randomUUID()
     const refA = snapDataRef.current.A ? `${id}:A` : null
     const refB = snapDataRef.current.B ? `${id}:B` : null
-    if (snapDataRef.current.A && refA) await putSnapshot(refA, snapDataRef.current.A)
-    if (snapDataRef.current.B && refB) await putSnapshot(refB, snapDataRef.current.B)
     const inst: SavedInstrument = {
       schemaVersion: INSTRUMENT_SCHEMA_VERSION,
       id,
       name,
-      createdAt,
+      createdAt: now,
       updatedAt: now,
       patch: stateRef.current.patch,
       snapshotRefA: refA,
       snapshotRefB: refB,
       sourceLabel: stateRef.current.ui.sourceLabel,
     }
-    await saveInstrument(inst)
-    currentInstrumentRef.current = id
+    await saveInstrumentBundle(inst, snapDataRef.current.A, snapDataRef.current.B)
   }, [])
 
   const onLoadSession = useCallback(
@@ -343,7 +331,6 @@ export function App() {
       // outgoing session's spectra half-applied under the incoming patch.
       const snapA = inst.snapshotRefA ? await getSnapshot(inst.snapshotRefA) : null
       const snapB = inst.snapshotRefB ? await getSnapshot(inst.snapshotRefB) : null
-      currentInstrumentRef.current = id
       dispatch({ type: 'load-patch', patch: inst.patch, sourceLabel: inst.sourceLabel })
       for (const [slot, snap] of [
         ['A', snapA],
@@ -381,9 +368,10 @@ export function App() {
   const onImportSession = useCallback(async (file: File) => {
     const text = await file.text()
     const { instrument, snapA, snapB } = importInstrumentJson(text)
-    if (instrument.snapshotRefA && snapA) await putSnapshot(instrument.snapshotRefA, snapA)
-    if (instrument.snapshotRefB && snapB) await putSnapshot(instrument.snapshotRefB, snapB)
-    await saveInstrument(instrument)
+    const id = crypto.randomUUID()
+    const snapshotRefA = snapA ? `${id}:A` : null
+    const snapshotRefB = snapB ? `${id}:B` : null
+    await saveInstrumentBundle({ ...instrument, id, snapshotRefA, snapshotRefB }, snapA, snapB)
   }, [])
 
   const closeModal = useCallback(() => dispatch({ type: 'open-modal', modal: null }), [])
@@ -567,7 +555,7 @@ export function App() {
 
           <CapturePanel
             audioStarted={ui.audioStarted}
-            liveFrozen={ui.liveFrozen}
+            liveFrozen={patch.params.freeze}
             captureMode={captureMode}
             onCaptureModeChange={setCaptureMode}
             onCapture={controls.capture}

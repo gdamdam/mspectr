@@ -10,6 +10,7 @@ import {
   deleteInstrument,
   duplicateInstrument,
   listInstruments,
+  pruneOrphanSnapshots,
   renameInstrument,
 } from '../persistence/instruments'
 import { Modal } from './Modal'
@@ -46,6 +47,7 @@ export function SessionsModal({
 
   const refresh = async () => {
     try {
+      await pruneOrphanSnapshots()
       setItems(await listInstruments())
       setError(null)
     } catch {

@@ -24,54 +24,75 @@ type Key = string
 class FakeRequest<T> {
   result: T | undefined
   error: unknown = null
+  readyState: IDBRequestReadyState = 'pending'
   onsuccess: (() => void) | null = null
   onerror: (() => void) | null = null
   _succeed(value: T) {
     this.result = value
-    queueMicrotask(() => this.onsuccess?.())
+    this.readyState = 'done'
   }
 }
 
 class FakeObjectStore {
-  constructor(private readonly data: Map<Key, unknown>) {}
+  constructor(
+    private readonly data: Map<Key, unknown>,
+    private readonly transaction: FakeTransaction,
+  ) {}
+  private finish<T>(req: FakeRequest<T>, value: T) {
+    this.transaction.beginRequest()
+    queueMicrotask(() => {
+      req._succeed(value)
+      req.onsuccess?.()
+      this.transaction.endRequest()
+    })
+    return req
+  }
   put(value: unknown, key: Key) {
     const req = new FakeRequest<undefined>()
     this.data.set(key, structuredClone(value))
-    req._succeed(undefined)
-    return req
+    return this.finish(req, undefined)
   }
   get(key: Key) {
     const req = new FakeRequest<unknown>()
     const v = this.data.has(key) ? structuredClone(this.data.get(key)) : undefined
-    req._succeed(v)
-    return req
+    return this.finish(req, v)
   }
   getAll() {
     const req = new FakeRequest<unknown[]>()
-    req._succeed(Array.from(this.data.values()).map((v) => structuredClone(v)))
-    return req
+    return this.finish(req, Array.from(this.data.values()).map((v) => structuredClone(v)))
   }
   getAllKeys() {
     const req = new FakeRequest<Key[]>()
-    req._succeed(Array.from(this.data.keys()))
-    return req
+    return this.finish(req, Array.from(this.data.keys()))
   }
   delete(key: Key) {
     const req = new FakeRequest<undefined>()
     this.data.delete(key)
-    req._succeed(undefined)
-    return req
+    return this.finish(req, undefined)
   }
 }
 
 class FakeTransaction {
+  oncomplete: (() => void) | null = null
+  onerror: (() => void) | null = null
   onabort: (() => void) | null = null
   error: unknown = null
+  private pending = 0
   constructor(private readonly stores: Map<string, Map<Key, unknown>>) {}
   objectStore(name: string) {
     const map = this.stores.get(name)
     if (!map) throw new Error(`unknown store ${name}`)
-    return new FakeObjectStore(map)
+    return new FakeObjectStore(map, this)
+  }
+  beginRequest() {
+    this.pending++
+  }
+  endRequest() {
+    this.pending--
+    if (this.pending === 0) queueMicrotask(() => this.oncomplete?.())
+  }
+  abort() {
+    this.onabort?.()
   }
 }
 
@@ -83,7 +104,7 @@ class FakeDatabase {
   createObjectStore(name: string) {
     this.stores.set(name, new Map())
   }
-  transaction(_name: string, _mode: string) {
+  transaction(_name: string | string[], _mode: string) {
     return new FakeTransaction(this.stores)
   }
   close() {
@@ -124,7 +145,9 @@ import {
   listInstruments,
   loadInstrument,
   renameInstrument,
+  saveInstrumentBundle,
   saveInstrument,
+  pruneOrphanSnapshots,
 } from './instruments'
 import { getSnapshot, putSnapshot } from './snapshots'
 
@@ -256,6 +279,28 @@ describe('deleteInstrument cascades to owned snapshots', () => {
     await saveInstrument(makeInstrument('a-copy', { snapshotRefA: 'a:A' }))
     await deleteInstrument('a')
     expect(await getSnapshot('a:A')).not.toBeNull()
+  })
+})
+
+describe('atomic session bundles and orphan pruning', () => {
+  it('saves an instrument and its owned snapshots together', async () => {
+    const snap = makeSnapshot()
+    await saveInstrumentBundle(
+      makeInstrument('bundle', { snapshotRefA: 'bundle:A' }),
+      snap,
+      null,
+    )
+    expect(await loadInstrument('bundle')).not.toBeNull()
+    expect(await getSnapshot('bundle:A')).not.toBeNull()
+  })
+
+  it('removes only snapshots not referenced by an instrument', async () => {
+    await putSnapshot('kept', makeSnapshot())
+    await putSnapshot('orphan', makeSnapshot())
+    await saveInstrument(makeInstrument('a', { snapshotRefA: 'kept' }))
+    expect(await pruneOrphanSnapshots()).toBe(1)
+    expect(await getSnapshot('kept')).not.toBeNull()
+    expect(await getSnapshot('orphan')).toBeNull()
   })
 })
 

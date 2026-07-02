@@ -82,11 +82,14 @@ export class StereoReverb {
   /** Process a stereo block in place. */
   process(left: Float32Array, right: Float32Array): void {
     const n = left.length
-    const amount = this.amount
-    if (amount <= 0 && this.early <= 0) return
+    const amount = Number.isFinite(this.amount) ? Math.max(0, Math.min(1, this.amount)) : 0
+    const earlyAmount = Number.isFinite(this.early) ? Math.max(0, Math.min(1, this.early)) : 0
+    const diffusion = Number.isFinite(this.diffusion) ? Math.max(0, Math.min(1, this.diffusion)) : 0
+    const width = Number.isFinite(this.width) ? Math.max(0, Math.min(1, this.width)) : 0
+    if (amount <= 0 && earlyAmount <= 0) return
     // Feedback/damp from amount: more amount → longer tail.
     const fb = 0.7 + 0.28 * this.amount
-    const damp = 0.15 + 0.4 * (1 - this.diffusion)
+    const damp = 0.15 + 0.4 * (1 - diffusion)
     for (const c of this.combL) {
       c.feedback = fb
       c.damp = damp
@@ -96,10 +99,10 @@ export class StereoReverb {
       c.damp = damp
     }
     const wet = amount
-    const earlyGain = this.early * 0.6
+    const earlyGain = earlyAmount * 0.6
     for (let i = 0; i < n; i++) {
-      const dryL = left[i]
-      const dryR = right[i]
+      const dryL = Number.isFinite(left[i]) ? left[i] : 0
+      const dryR = Number.isFinite(right[i]) ? right[i] : 0
       const mono = (dryL + dryR) * 0.5
 
       // Early reflections from a shared tap buffer.
@@ -124,14 +127,11 @@ export class StereoReverb {
         l = this.apL[a].process(l)
         r = this.apR[a].process(r)
       }
-      const wetL = l + early
-      const wetR = r + early
-
-      // Mix and apply stereo width on the wet signal (mid/side).
-      const mid = (wetL + wetR) * 0.5
-      const side = (wetL - wetR) * 0.5 * (0.3 + 1.4 * this.width)
-      left[i] = dryL + wet * (mid + side)
-      right[i] = dryR + wet * (mid - side)
+      // Reverb tail and early reflections have independent controls.
+      const mid = (l + r) * 0.5
+      const side = (l - r) * 0.5 * (0.3 + 1.4 * width)
+      left[i] = dryL + wet * (mid + side) + early
+      right[i] = dryR + wet * (mid - side) + early
       if (++this.earlyIdx >= this.earlyLen) this.earlyIdx = 0
     }
   }

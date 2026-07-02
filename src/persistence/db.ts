@@ -68,9 +68,53 @@ export async function withStore<T>(
       const transaction = db.transaction(storeName, mode)
       const store = transaction.objectStore(storeName)
       const request = run(store)
-      request.onsuccess = () => resolve(request.result)
+      let result: T
+      request.onsuccess = () => {
+        result = request.result
+      }
       request.onerror = () =>
         reject(request.error ?? new Error('mspectr persistence: IndexedDB request failed'))
+      transaction.oncomplete = () => resolve(result)
+      transaction.onerror = () =>
+        reject(transaction.error ?? new Error('mspectr persistence: IndexedDB transaction failed'))
+      transaction.onabort = () =>
+        reject(transaction.error ?? new Error('mspectr persistence: IndexedDB transaction aborted'))
+    })
+  } finally {
+    db.close()
+  }
+}
+
+/**
+ * Run a synchronous batch of requests in one transaction and resolve only
+ * after commit. `readResult` is evaluated at completion, when every request's
+ * result is available. Keeping request creation synchronous prevents the
+ * browser from auto-committing between awaited operations.
+ */
+export async function withTransaction<T>(
+  storeNames: string[],
+  mode: IDBTransactionMode,
+  run: (transaction: IDBTransaction) => () => T,
+): Promise<T> {
+  const db = await openDb()
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      const transaction = db.transaction(storeNames, mode)
+      let readResult: () => T
+      try {
+        readResult = run(transaction)
+      } catch (error) {
+        try {
+          transaction.abort()
+        } catch {
+          /* already inactive */
+        }
+        reject(error)
+        return
+      }
+      transaction.oncomplete = () => resolve(readResult())
+      transaction.onerror = () =>
+        reject(transaction.error ?? new Error('mspectr persistence: IndexedDB transaction failed'))
       transaction.onabort = () =>
         reject(transaction.error ?? new Error('mspectr persistence: IndexedDB transaction aborted'))
     })

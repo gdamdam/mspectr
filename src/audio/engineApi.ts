@@ -43,7 +43,11 @@ export interface AudioEngineApi {
   /** Bounded voice count (1..MAX_POLYPHONY, further capped by quality mode). */
   setPolyphony(value: number): void
 
-  capture(slot: SnapshotSlot, mode: CaptureMode): void
+  capture(
+    slot: SnapshotSlot,
+    mode: CaptureMode,
+    metadata?: { sourceLabel: string; capturedAt: number; isLiveDerived: boolean },
+  ): void
   loadSnapshot(slot: SnapshotSlot, snapshot: SpectralSnapshot): void
   clearSnapshot(slot: SnapshotSlot): void
   swapSnapshots(): void

@@ -142,6 +142,12 @@ function normalizePeak(data: Float32Array, target = TARGET_PEAK): void {
   for (let i = 0; i < data.length; i++) data[i] *= gain
 }
 
+function sanitizeFinite(data: Float32Array): void {
+  for (let i = 0; i < data.length; i++) {
+    if (!Number.isFinite(data[i])) data[i] = 0
+  }
+}
+
 /**
  * Decimate a mono channel down to ~PREVIEW_POINTS using per-bucket peak (max
  * absolute value, sign-preserving) so transients survive the downsample. Returns
@@ -174,8 +180,11 @@ export function decimateWaveform(data: Float32Array, points = PREVIEW_POINTS): F
  * frequency in Hz, `q` the resonance.
  */
 function makeBandpass(sampleRate: number, f: number, q: number): (x: number) => number {
-  const g = Math.tan((Math.PI * f) / sampleRate)
-  const k = 1 / q
+  const safeRate = Math.max(1000, Number.isFinite(sampleRate) ? sampleRate : 44100)
+  const safeFrequency = Math.max(1, Math.min(f, safeRate * 0.45))
+  const safeQ = Math.max(0.05, Number.isFinite(q) ? q : 1)
+  const g = Math.tan((Math.PI * safeFrequency) / safeRate)
+  const k = 1 / safeQ
   const a1 = 1 / (1 + g * (g + k))
   const a2 = g * a1
   let ic1eq = 0
@@ -809,6 +818,7 @@ export function renderGeneratedBuffer(
   const rng = mulberry32(SOURCE_SEEDS[id])
 
   let mono = RENDERERS[id](rng, sr, rawLength)
+  sanitizeFinite(mono)
   removeDc(mono)
   mono = applyLoopCrossfade(mono, fade)
   removeDc(mono) // crossfade can reintroduce a tiny offset; re-centre.

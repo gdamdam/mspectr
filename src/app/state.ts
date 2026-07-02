@@ -76,8 +76,6 @@ export interface UiState {
   sourceKind: AudioInputKind
   /** Label of the active source (preset name, file name, mic name, …). */
   sourceLabel: string
-  /** Live freeze toggle (holds the live spectrum without capturing a slot). */
-  liveFrozen: boolean
   /** Which slot, if any, is currently being auditioned. */
   auditioning: SnapshotSlot | null
   snapshotA: SlotMeta | null
@@ -128,7 +126,6 @@ export type Action =
   | { type: 'set-octave'; value: number }
   | { type: 'audio-started' }
   | { type: 'set-source'; kind: AudioInputKind; label: string }
-  | { type: 'set-live-frozen'; on: boolean }
   | { type: 'set-auditioning'; slot: SnapshotSlot | null }
   | { type: 'snapshot-captured'; slot: SnapshotSlot; label: string; capturedAt: number; isLiveDerived: boolean; character?: string }
   | { type: 'snapshot-loaded'; slot: SnapshotSlot; meta: SlotMeta }
@@ -167,7 +164,6 @@ function initialUi(prefs: Preferences): UiState {
     audioStarted: false,
     sourceKind: 'generated',
     sourceLabel: DEFAULT_PRESET.name,
-    liveFrozen: false,
     auditioning: null,
     snapshotA: null,
     snapshotB: null,
@@ -216,7 +212,6 @@ export function reducer(state: AppState, action: Action): AppState {
           ...state.ui,
           sourceKind: 'generated',
           sourceLabel: preset.name,
-          liveFrozen: false,
           auditioning: null,
         },
       }
@@ -228,7 +223,6 @@ export function reducer(state: AppState, action: Action): AppState {
         ui: {
           ...state.ui,
           sourceLabel: action.sourceLabel ?? state.ui.sourceLabel,
-          liveFrozen: false,
         },
       }
 
@@ -298,11 +292,8 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'set-source':
       return {
         ...state,
-        ui: { ...state.ui, sourceKind: action.kind, sourceLabel: action.label, liveFrozen: false },
+        ui: { ...state.ui, sourceKind: action.kind, sourceLabel: action.label },
       }
-
-    case 'set-live-frozen':
-      return { ...state, ui: { ...state.ui, liveFrozen: action.on } }
 
     case 'set-auditioning':
       return { ...state, ui: { ...state.ui, auditioning: action.slot } }

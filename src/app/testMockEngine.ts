@@ -10,7 +10,7 @@ import type {
   SnapshotCapturedListener,
   TelemetryListener,
 } from '../audio/engineApi'
-import type { CaptureMode, QualityMode, SnapshotSlot, SpectralParams, SpectralSnapshot } from '../audio/contracts'
+import type { QualityMode, SnapshotSlot, SpectralParams, SpectralSnapshot } from '../audio/contracts'
 
 export interface MockEngine extends AudioEngineApi {
   calls: Array<{ method: string; args: unknown[] }>
@@ -48,7 +48,7 @@ export function createMockEngine(): MockEngine {
     setQuality: rec('setQuality') as (q: QualityMode) => void,
     setSeed: rec('setSeed'),
     setPolyphony: rec('setPolyphony'),
-    capture: rec('capture') as (slot: SnapshotSlot, mode: CaptureMode) => void,
+    capture: rec('capture') as MockEngine['capture'],
     loadSnapshot: rec('loadSnapshot'),
     clearSnapshot: rec('clearSnapshot'),
     swapSnapshots: rec('swapSnapshots'),

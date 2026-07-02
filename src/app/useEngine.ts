@@ -43,7 +43,11 @@ import type { Action, AppState } from './state'
 
 export interface EngineControls {
   start(): Promise<void>
-  setSourcePreset(generatedId: Parameters<typeof createGeneratedSource>[1], label: string): void
+  setSourcePreset(
+    generatedId: Parameters<typeof createGeneratedSource>[1],
+    label: string,
+    preserveFreeze?: boolean,
+  ): void
   setFileSource(file: File): Promise<void>
   setMicSource(deviceId?: string): Promise<void>
   setTabSource(): Promise<void>
@@ -93,6 +97,8 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
   const recorderRef = useRef<WavRecorder | null>(null)
   /** rawNote → the quantized MIDI note actually sounding, for matched release. */
   const soundingRef = useRef<Map<number, number>>(new Map())
+  /** quantized note → number of raw keys holding it after scale lock. */
+  const quantizedRefs = useRef<Map<number, number>>(new Map())
 
   // --- engine event subscriptions -----------------------------------------
   useEffect(() => {
@@ -122,7 +128,18 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
       const n = quantizeNote(rawNote + patch.octave * 12, patch.scale)
       // If this raw key is already sounding a (possibly different) note, release it first.
       const prev = soundingRef.current.get(rawNote)
-      if (prev !== undefined && prev !== n) engine.noteOff(prev)
+      if (prev !== undefined && prev !== n) {
+        const remaining = (quantizedRefs.current.get(prev) ?? 1) - 1
+        if (remaining <= 0) {
+          quantizedRefs.current.delete(prev)
+          engine.noteOff(prev)
+        } else {
+          quantizedRefs.current.set(prev, remaining)
+        }
+      }
+      if (prev === undefined || prev !== n) {
+        quantizedRefs.current.set(n, (quantizedRefs.current.get(n) ?? 0) + 1)
+      }
       soundingRef.current.set(rawNote, n)
       engine.noteOn(n, velocity)
     },
@@ -134,10 +151,24 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
       const n = soundingRef.current.get(rawNote)
       if (n === undefined) return
       soundingRef.current.delete(rawNote)
-      engine.noteOff(n)
+      const remaining = (quantizedRefs.current.get(n) ?? 1) - 1
+      if (remaining <= 0) {
+        quantizedRefs.current.delete(n)
+        engine.noteOff(n)
+      } else {
+        quantizedRefs.current.set(n, remaining)
+      }
     },
     [engine],
   )
+
+  const doPanic = useCallback(() => {
+    soundingRef.current.clear()
+    quantizedRefs.current.clear()
+    keyboardRef.current?.releaseAll()
+    midiRef.current?.panic()
+    engine.panic()
+  }, [engine])
 
   // --- keyboard + midi instances (created once) ----------------------------
   useEffect(() => {
@@ -190,25 +221,46 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
 
   // --- source swapping ------------------------------------------------------
   const swapSource = useCallback(
-    (handle: SourceHandle, kind: SourceHandle['kind'], label: string, monitorSafe: boolean) => {
+    (
+      handle: SourceHandle,
+      kind: SourceHandle['kind'],
+      label: string,
+      monitorSafe: boolean,
+      preserveFreeze = false,
+    ) => {
       sourceRef.current?.dispose()
       sourceRef.current = handle
       engine.setSourceNode(handle.node)
+      engine.clearLive()
       // Feedback safety: only generated sources monitor through the output.
       // Mic/tab stay muted regardless of the monitor preference.
       engine.setMonitor(monitorSafe && stateRef.current.ui.prefs.monitor)
+      if (preserveFreeze) {
+        engine.freezeLive(true)
+      } else {
+        engine.freezeLive(false)
+        dispatch({ type: 'edit-param', key: 'freeze', value: false })
+      }
       dispatch({ type: 'set-source', kind, label })
     },
     [engine, dispatch, stateRef],
   )
 
   // --- public controls ------------------------------------------------------
-  const doPanic = useCallback(() => {
-    soundingRef.current.clear()
-    keyboardRef.current?.releaseAll()
-    midiRef.current?.panic()
-    engine.panic()
-  }, [engine])
+  // Key-up is not delivered when focus leaves the page. Treat blur/hidden as a
+  // hard performance boundary so neither QWERTY nor MIDI state can drone.
+  useEffect(() => {
+    const release = () => doPanic()
+    const onVisibility = () => {
+      if (document.hidden) release()
+    }
+    window.addEventListener('blur', release)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('blur', release)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [doPanic])
 
   const controls = useMemo<EngineControls>(() => {
     return {
@@ -235,14 +287,14 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
         dispatch({ type: 'set-source', kind: 'generated', label: ui.sourceLabel })
       },
 
-      setSourcePreset(generatedId, label) {
+      setSourcePreset(generatedId, label, preserveFreeze = false) {
         const ctx = engine.context
         if (!ctx) return
         // Synchronous, but still bump the token so any async source swap already
         // in flight resolves stale and won't overwrite this preset.
         sourceReqRef.current += 1
         const handle = createGeneratedSource(ctx, generatedId)
-        swapSource(handle, 'generated', label, true)
+        swapSource(handle, 'generated', label, true, preserveFreeze)
       },
 
       async setFileSource(file) {
@@ -276,7 +328,14 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
 
       listMicDevices: () => listInputDevices(),
 
-      capture: (slot, mode) => engine.capture(slot, mode),
+      capture(slot, mode) {
+        const { sourceKind, sourceLabel } = stateRef.current.ui
+        engine.capture(slot, mode, {
+          sourceLabel,
+          capturedAt: Date.now(),
+          isLiveDerived: sourceKind === 'microphone' || sourceKind === 'tab',
+        })
+      },
 
       loadSnapshotFromSerialized(slot, snapshot, label) {
         engine.loadSnapshot(slot, snapshot)
@@ -304,12 +363,12 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
 
       freezeLive(on) {
         engine.freezeLive(on)
-        dispatch({ type: 'set-live-frozen', on })
+        dispatch({ type: 'edit-param', key: 'freeze', value: on })
       },
 
       clearLive() {
         engine.clearLive()
-        dispatch({ type: 'set-live-frozen', on: false })
+        dispatch({ type: 'edit-param', key: 'freeze', value: false })
       },
 
       audition(slot) {

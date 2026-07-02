@@ -212,6 +212,23 @@ describe('createLinkBridge', () => {
     expect(MockWebSocket.instances).toHaveLength(1)
   })
 
+  it('without autoRetry, tries every loopback address once before giving up', () => {
+    const bridge = createLinkBridge(false)
+    bridge.connect()
+    for (let i = 0; i < 3; i++) {
+      const ws = MockWebSocket.instances[i]
+      ws.triggerError()
+      ws.triggerClose()
+    }
+    expect(MockWebSocket.instances.map((ws) => ws.url)).toEqual([
+      'ws://127.0.0.1:19876',
+      'ws://[::1]:19876',
+      'ws://localhost:19876',
+    ])
+    vi.advanceTimersByTime(10000)
+    expect(MockWebSocket.instances).toHaveLength(3)
+  })
+
   it('onerror advances to the next loopback address on retry', () => {
     const bridge = createLinkBridge(true)
     bridge.connect()

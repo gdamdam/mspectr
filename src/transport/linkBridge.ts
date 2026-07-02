@@ -93,6 +93,7 @@ export function createLinkBridge(autoRetry = false): LinkBridge {
   let state: LinkState = { ...DEFAULT_STATE }
   let enabled = false
   let urlIdx = 0
+  let attempted = 0
 
   function notify(): void {
     for (const fn of listeners) fn(state)
@@ -102,6 +103,17 @@ export function createLinkBridge(autoRetry = false): LinkBridge {
     if (!autoRetry) return
     if (retryTimer) clearTimeout(retryTimer)
     retryTimer = setTimeout(open, RETRY_MS)
+  }
+
+  function tryNextUrl(): void {
+    attempted++
+    urlIdx = (urlIdx + 1) % WS_URLS.length
+    if (attempted < WS_URLS.length) {
+      open()
+    } else {
+      attempted = 0
+      scheduleRetry()
+    }
   }
 
   function open(): void {
@@ -116,13 +128,15 @@ export function createLinkBridge(autoRetry = false): LinkBridge {
     try {
       socket = new WebSocket(WS_URLS[urlIdx])
     } catch {
-      urlIdx = (urlIdx + 1) % WS_URLS.length
-      scheduleRetry()
+      tryNextUrl()
       return
     }
     ws = socket
+    let opened = false
 
     socket.onopen = () => {
+      opened = true
+      attempted = 0
       state = { ...state, connected: true }
       notify()
     }
@@ -145,12 +159,13 @@ export function createLinkBridge(autoRetry = false): LinkBridge {
         state = { ...state, connected: false, peers: 0 }
         notify()
       }
-      if (enabled) scheduleRetry()
+      if (!enabled) return
+      if (opened) scheduleRetry()
+      else tryNextUrl()
     }
 
     socket.onerror = () => {
-      // Advance to the next loopback address and let onclose drive any retry.
-      urlIdx = (urlIdx + 1) % WS_URLS.length
+      // Let onclose advance through the fallback list exactly once per cycle.
       try {
         socket.close()
       } catch {
@@ -162,6 +177,8 @@ export function createLinkBridge(autoRetry = false): LinkBridge {
   return {
     connect(): void {
       enabled = true
+      attempted = 0
+      urlIdx = 0
       open()
     },
     disconnect(): void {

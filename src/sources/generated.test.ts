@@ -104,6 +104,20 @@ describe('renderGeneratedBuffer', () => {
     }
   })
 
+  it('stays finite and audible in low-rate Bluetooth-style contexts', () => {
+    for (const sampleRate of [8000, 16000]) {
+      for (const id of GENERATED_SOURCE_IDS) {
+        const data = channel(renderGeneratedBuffer(makeCtx(sampleRate), id, TEST_SECONDS))
+        let peak = 0
+        for (const sample of data) {
+          expect(Number.isFinite(sample)).toBe(true)
+          peak = Math.max(peak, Math.abs(sample))
+        }
+        expect(peak).toBeGreaterThan(0.01)
+      }
+    }
+  })
+
   it('peak-normalises to ~-6 dBFS', () => {
     for (const id of GENERATED_SOURCE_IDS) {
       const data = channel(renderGeneratedBuffer(makeCtx(), id))
