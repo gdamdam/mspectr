@@ -10,8 +10,10 @@
  */
 import {
   INTERVAL_SETS,
+  LFO_TARGETS,
   MAX_HARMONY_VOICES,
   type IntervalSetId,
+  type LfoTarget,
   type PhaseMode,
   type QualityMode,
   type SpectralParams,
@@ -71,6 +73,13 @@ const GROUPS: { title: string; fields: NumField[] }[] = [
       { key: 'framePosition', label: 'Position', min: 0, max: 1, step: 0.01 },
       { key: 'frameLoopStart', label: 'Loop start', min: 0, max: 1, step: 0.01 },
       { key: 'frameLoopEnd', label: 'Loop end', min: 0, max: 1, step: 0.01 },
+    ],
+  },
+  {
+    title: 'Modulation',
+    fields: [
+      { key: 'lfoDepth', label: 'LFO depth', min: 0, max: 1, step: 0.01 },
+      { key: 'lfoRate', label: 'LFO rate', min: 0.01, max: 20, step: 0.01, unit: 'Hz' },
     ],
   },
   {
@@ -224,6 +233,28 @@ export function AdvancedPanel({
                   { value: 'lock', label: 'Lock' },
                 ]}
               />
+            </label>
+          </fieldset>
+
+          <fieldset className="advanced__group">
+            <legend>LFO target</legend>
+            <label className="field">
+              <span className="visually-hidden">LFO target parameter</span>
+              <Select
+                ariaLabel="LFO target parameter"
+                value={params.lfoTarget}
+                onChange={(v) => onParam('lfoTarget', v as LfoTarget)}
+                options={LFO_TARGETS.map((id) => ({ value: id, label: id }))}
+              />
+            </label>
+            <label className="param param--check">
+              <input
+                type="checkbox"
+                checked={params.lfoSync}
+                onChange={(e) => onParam('lfoSync', e.target.checked)}
+                aria-label="Sync LFO to tempo"
+              />
+              <span className="param__label">Sync to tempo</span>
             </label>
           </fieldset>
 

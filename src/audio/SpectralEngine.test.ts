@@ -328,4 +328,48 @@ describe('SpectralEngine', () => {
     expect(bright.steady).toBe(true)
     expect(bright.zc).toBeGreaterThan(dark.zc * 1.3)
   })
+
+  it('LFO on morph makes a held note evolve over time', () => {
+    const e = new SpectralEngine(SR, 'normal')
+    e.setParams({ ...DEFAULT_PARAMS, freezePhase: 'lock', reverbAmount: 0, attack: 0.005, release: 0.1, phaseMotion: 0 })
+    // A = dark (220 Hz), B = bright (1200 Hz).
+    run(e, 40, 220)
+    e.capture('A', 'frame')
+    run(e, 4, 220)
+    run(e, 40, 1200)
+    e.capture('B', 'frame')
+    run(e, 4, 1200)
+
+    // Windowed zero-crossing spread across ~0.6 s of a held note.
+    const spread = (params: Partial<SpectralParams>) => {
+      e.panic()
+      e.setParams({ ...DEFAULT_PARAMS, freezePhase: 'lock', reverbAmount: 0, attack: 0.005, release: 0.1, phaseMotion: 0, morph: 0.5, ...params })
+      e.noteOn(60, 110)
+      const total = Math.floor(SR * 0.6)
+      const out = new Float32Array(total)
+      const silence = new Float32Array(BLOCK)
+      const l = new Float32Array(BLOCK)
+      const r = new Float32Array(BLOCK)
+      let pos = 0
+      while (pos < total) {
+        e.render(silence, l, r)
+        const take = Math.min(BLOCK, total - pos)
+        out.set(l.subarray(0, take), pos)
+        pos += take
+      }
+      e.noteOff(60)
+      const win = Math.floor(total / 6)
+      const counts: number[] = []
+      for (let w = 1; w < 5; w++) {
+        let c = 0
+        for (let i = w * win + 1; i < (w + 1) * win; i++) if (out[i - 1] <= 0 !== (out[i] <= 0)) c++
+        counts.push(c)
+      }
+      return Math.max(...counts) - Math.min(...counts)
+    }
+
+    const off = spread({ lfoTarget: 'off' })
+    const modulated = spread({ lfoTarget: 'morph', lfoDepth: 1, lfoRate: 6 })
+    expect(modulated).toBeGreaterThan(off * 2 + 20)
+  })
 })

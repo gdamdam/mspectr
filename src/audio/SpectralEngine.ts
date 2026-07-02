@@ -165,6 +165,14 @@ export class SpectralEngine {
   private smOutGain = 1
   private bendSemitones = 0
 
+  // Global modulation LFO.
+  private lfoPhase = 0
+  private tempoBpm = 120
+  /** Per-hop effective formant (base + LFO), read by the per-voice chain. */
+  private effFormant = 0
+  /** Per-hop LFO offset applied to the flipbook scrub position. */
+  private lfoPosOffset = 0
+
   // Capture state.
   private captureSlot: SnapshotSlot | null = null
   private captureMode: CaptureMode = 'frame'
@@ -271,6 +279,11 @@ export class SpectralEngine {
     this.polyphony = Math.round(clamp(value, MIN_POLYPHONY, this.maxVoices))
     const toRelease = this.allocator.setMaxVoices(this.polyphony)
     for (const idx of toRelease) this.releaseVoiceImmediate(idx)
+  }
+
+  /** Tempo for LFO sync (BPM); driven by the Link bridge when connected. */
+  setTempo(bpm: number): void {
+    if (Number.isFinite(bpm) && bpm > 0) this.tempoBpm = clamp(bpm, 20, 400)
   }
 
   setSeed(seed: number): void {
@@ -607,6 +620,21 @@ export class SpectralEngine {
     const targetOut = Math.pow(10, p.outputGainDb / 20)
     this.smOutGain += sc * (targetOut - this.smOutGain)
 
+    // Global modulation LFO (one sine shared across voices). Depth 0..1 maps to
+    // each target's natural range; ±1 semitone-scaled for formant/shift.
+    let lfoVal = 0
+    if (p.lfoTarget !== 'off' && p.lfoDepth > 0) {
+      const rateHz = p.lfoSync ? (this.tempoBpm / 60) * p.lfoRate : p.lfoRate
+      this.lfoPhase += (TWO_PI * rateHz * hop) / this.sampleRate
+      if (this.lfoPhase > TWO_PI) this.lfoPhase -= TWO_PI
+      lfoVal = p.lfoDepth * Math.sin(this.lfoPhase)
+    } else {
+      this.lfoPhase = 0
+    }
+    const lfoOn = (t: typeof p.lfoTarget) => (p.lfoTarget === t ? lfoVal : 0)
+    this.effFormant = clamp(p.formant + lfoOn('formant') * 12, -24, 24)
+    this.lfoPosOffset = lfoOn('position')
+
     // Advance the shared evolving-frame cursor and refresh each filled slot's
     // current frame, so a living capture replays its own spectral motion.
     this.advanceFrameCursor()
@@ -620,11 +648,13 @@ export class SpectralEngine {
     // Shared processed base spectrum: envelope/fine-structure morph → tilt →
     // MOTION-breathed blur → gate. (fmEnv/fmShifted are free here — the per-voice
     // formant reuses them later in the hop.)
-    morphSpectra(effA, effB, clamp(p.morph, 0, 1), this.s1, this.fmEnv, this.fmShifted)
-    applyTilt(this.s1, p.tilt, this.s2, this.sampleRate, this.fftSize)
+    const effMorph = clamp(p.morph + lfoOn('morph'), 0, 1)
+    morphSpectra(effA, effB, effMorph, this.s1, this.fmEnv, this.fmShifted)
+    const effTilt = clamp(p.tilt + lfoOn('tilt'), -1, 1)
+    applyTilt(this.s1, effTilt, this.s2, this.sampleRate, this.fftSize)
     this.motionSamples += hop
     const motionLfo = Math.sin((TWO_PI * MOTION_RATE_HZ * this.motionSamples) / this.sampleRate)
-    const effBlur = clamp(p.blur + p.phaseMotion * 0.25 * motionLfo, 0, 1)
+    const effBlur = clamp(p.blur + p.phaseMotion * 0.25 * motionLfo + lfoOn('blur'), 0, 1)
     applyBlur(this.s2, effBlur, this.s1)
     this.gate.process(this.s1, p.gate, this.s2) // s2 = shared processed base
 
@@ -633,7 +663,7 @@ export class SpectralEngine {
 
     const hopSeconds = hop / this.sampleRate
     const intervals = INTERVAL_SETS[p.harmonyInterval] ?? INTERVAL_SETS.octaves
-    const shiftBins = shiftBinsFor(p.shift, this.sampleRate, this.fftSize)
+    const shiftBins = shiftBinsFor(p.shift + lfoOn('shift') * 12, this.sampleRate, this.fftSize)
     const animate = p.freezePhase === 'animate'
     const motion = p.phaseMotion
     let activePeak = 0
@@ -705,8 +735,8 @@ export class SpectralEngine {
       return
     }
     if (p.frameSpeed === 0) {
-      // Frozen: the scrub position maps directly into the loop region.
-      this.frameCursor = lo + clamp(p.framePosition, 0, 1) * (hi - lo)
+      // Frozen: the scrub position (plus any LFO offset) maps into the region.
+      this.frameCursor = lo + clamp(p.framePosition + this.lfoPosOffset, 0, 1) * (hi - lo)
       return
     }
     const fhop = this.slotA.filled && this.slotA.frameCount > 1 ? this.slotA.frameHop : this.slotB.frameHop
@@ -755,7 +785,7 @@ export class SpectralEngine {
     const hop = this.hop
     const ratio = Math.pow(2, (v.note - REF_NOTE + this.smTranspose + this.bendSemitones) / 12)
     resampleSpectrum(baseMag, ratio, this.bufA)
-    applyFormant(this.bufA, p.formant, this.bufB, this.fmEnv, this.fmShifted)
+    applyFormant(this.bufA, this.effFormant, this.bufB, this.fmEnv, this.fmShifted)
     applyFreqShift(this.bufB, shiftBins, this.bufA)
     applyHarmonize(this.bufA, p.harmonyVoices, intervals, p.harmonyMix, this.bufB, this.harmScratch)
 

@@ -87,6 +87,20 @@ export function qualityConfig(mode: QualityMode): QualityConfig {
 export type PhaseMode = 'lock' | 'animate'
 
 // ---------------------------------------------------------------------------
+// Modulation LFO
+// ---------------------------------------------------------------------------
+
+/**
+ * A single global sine LFO modulates one spectral parameter so held notes
+ * evolve without hand movement (Razor's "modulated spectra articulate").
+ * 'off' disables it. The engine applies one LFO shared across voices because
+ * morph/tilt/blur feed a per-hop shared base spectrum; per-voice retrigger
+ * would require abandoning that optimization.
+ */
+export type LfoTarget = 'off' | 'morph' | 'position' | 'tilt' | 'blur' | 'formant' | 'shift'
+export const LFO_TARGETS: readonly LfoTarget[] = ['off', 'morph', 'position', 'tilt', 'blur', 'formant', 'shift']
+
+// ---------------------------------------------------------------------------
 // Scales
 // ---------------------------------------------------------------------------
 
@@ -203,6 +217,13 @@ export interface SpectralParams {
   harmonyMix: number
   /** Phase drift amount for animated freeze, 0..1. */
   phaseMotion: number
+  /** Modulation LFO: target parameter, depth 0..1, and rate. */
+  lfoTarget: LfoTarget
+  lfoDepth: number
+  /** LFO rate: free-run frequency in Hz, or cycles-per-beat when lfoSync. */
+  lfoRate: number
+  /** When true, lfoRate is interpreted as cycles-per-beat against the tempo. */
+  lfoSync: boolean
   /** Amplitude envelope (seconds, except sustain which is a 0..1 level). */
   attack: number
   decay: number
@@ -495,6 +516,10 @@ export const DEFAULT_PARAMS: SpectralParams = {
   harmonyInterval: 'octaves',
   harmonyMix: 0.5,
   phaseMotion: 0.2,
+  lfoTarget: 'off',
+  lfoDepth: 0,
+  lfoRate: 1,
+  lfoSync: false,
   attack: 0.01,
   decay: 0.2,
   sustain: 0.8,
@@ -555,6 +580,10 @@ export function sanitizeParams(raw: unknown): SpectralParams {
     harmonyInterval: oneOf(p.harmonyInterval, INTERVAL_SET_IDS, DEFAULT_PARAMS.harmonyInterval),
     harmonyMix: finiteClamp(p.harmonyMix, 0, 1, DEFAULT_PARAMS.harmonyMix),
     phaseMotion: finiteClamp(p.phaseMotion, 0, 1, DEFAULT_PARAMS.phaseMotion),
+    lfoTarget: oneOf(p.lfoTarget, LFO_TARGETS, DEFAULT_PARAMS.lfoTarget),
+    lfoDepth: finiteClamp(p.lfoDepth, 0, 1, DEFAULT_PARAMS.lfoDepth),
+    lfoRate: finiteClamp(p.lfoRate, 0.01, 20, DEFAULT_PARAMS.lfoRate),
+    lfoSync: Boolean(p.lfoSync),
     attack: finiteClamp(p.attack, 0, 10, DEFAULT_PARAMS.attack),
     decay: finiteClamp(p.decay, 0, 10, DEFAULT_PARAMS.decay),
     sustain: finiteClamp(p.sustain, 0, 1, DEFAULT_PARAMS.sustain),
