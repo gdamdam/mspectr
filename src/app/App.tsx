@@ -594,7 +594,12 @@ export function App() {
 
       <div className="strip">
         <KeyboardPanel enabled={ui.keyboardEnabled} onToggle={(on) => dispatch({ type: 'set-keyboard', enabled: on })} />
-        <MidiPanel enabled={ui.midiEnabled} devices={ui.midiDevices} onEnable={() => void controls.enableMidi()} />
+        <MidiPanel
+          enabled={ui.midiEnabled}
+          devices={ui.midiDevices}
+          onEnable={() => void controls.enableMidi()}
+          link={ui.link}
+        />
       </div>
 
       <AdvancedPanel

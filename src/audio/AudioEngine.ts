@@ -193,6 +193,10 @@ export class AudioEngine implements AudioEngineApi {
     this.post({ type: 'set-seed', seed })
   }
 
+  setTempo(bpm: number): void {
+    this.post({ type: 'set-tempo', bpm })
+  }
+
   setPolyphony(value: number): void {
     this.post({ type: 'set-polyphony', value })
   }

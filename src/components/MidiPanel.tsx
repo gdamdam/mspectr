@@ -8,9 +8,24 @@ export interface MidiPanelProps {
   enabled: boolean
   devices: string[]
   onEnable: () => void
+  /** Ableton Link status (via the localhost bridge). */
+  link?: { connected: boolean; tempo: number; peers: number }
 }
 
-export function MidiPanel({ enabled, devices, onEnable }: MidiPanelProps) {
+function LinkStatus({ link }: { link?: MidiPanelProps['link'] }) {
+  if (!link?.connected) return null
+  return (
+    <p className="midi__state" role="status">
+      <span className="state-pill" data-state="live">
+        <span className="state-pill__dot" aria-hidden="true" />
+        Link {Math.round(link.tempo)} BPM
+        {link.peers > 0 ? ` · ${link.peers} peer${link.peers === 1 ? '' : 's'}` : ''}
+      </span>
+    </p>
+  )
+}
+
+export function MidiPanel({ enabled, devices, onEnable, link }: MidiPanelProps) {
   if (!supportsWebMidi()) {
     return (
       <section className="panel midi" aria-labelledby="midi-heading">
@@ -18,6 +33,7 @@ export function MidiPanel({ enabled, devices, onEnable }: MidiPanelProps) {
           MIDI
         </h2>
         <p className="muted">Web MIDI is not available in this browser.</p>
+        <LinkStatus link={link} />
       </section>
     )
   }
@@ -49,6 +65,7 @@ export function MidiPanel({ enabled, devices, onEnable }: MidiPanelProps) {
           Enable MIDI
         </button>
       )}
+      <LinkStatus link={link} />
     </section>
   )
 }

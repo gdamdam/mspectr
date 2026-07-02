@@ -38,6 +38,7 @@ import type { SourceHandle } from '../sources/types'
 import { QwertyKeyboard } from '../instrument/keyboard'
 import { quantizeNote } from '../instrument/scales'
 import { MidiRouter } from '../midi/router'
+import { createLinkBridge } from '../transport/linkBridge'
 import { WavRecorder, recordingFilename } from '../recording/wavRecorder'
 import type { Action, AppState } from './state'
 
@@ -197,6 +198,22 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
     // doPanic/noteOn/noteOff are stable callbacks; engine/dispatch stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // --- Ableton Link bridge (optional, localhost only) ----------------------
+  // Connects to the shared mpump link-bridge; its tempo drives the modulation
+  // LFO's sync mode. Absent bridge → stays disconnected, nothing throws.
+  useEffect(() => {
+    const bridge = createLinkBridge(true)
+    const unsubscribe = bridge.subscribe((s) => {
+      engine.setTempo(s.tempo)
+      dispatch({ type: 'set-link', link: { connected: s.connected, tempo: s.tempo, peers: s.peers } })
+    })
+    bridge.connect()
+    return () => {
+      unsubscribe()
+      bridge.disconnect()
+    }
+  }, [engine, dispatch])
 
   // --- window key listeners, gated by enabled flag -------------------------
   useEffect(() => {

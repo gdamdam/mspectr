@@ -429,6 +429,7 @@ export type EngineCommand =
   | { type: 'set-params'; params: SpectralParams }
   | { type: 'set-quality'; quality: QualityMode }
   | { type: 'set-seed'; seed: number }
+  | { type: 'set-tempo'; bpm: number }
   | { type: 'set-polyphony'; value: number }
   | {
       type: 'capture'

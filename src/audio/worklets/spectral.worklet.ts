@@ -53,6 +53,9 @@ class SpectralProcessor extends AudioWorkletProcessor {
       case 'set-seed':
         this.engine.setSeed(cmd.seed)
         break
+      case 'set-tempo':
+        this.engine.setTempo(cmd.bpm)
+        break
       case 'set-polyphony':
         this.engine.setPolyphony(cmd.value)
         break

@@ -47,6 +47,7 @@ export function createMockEngine(): MockEngine {
     setParams: rec('setParams') as (p: SpectralParams) => void,
     setQuality: rec('setQuality') as (q: QualityMode) => void,
     setSeed: rec('setSeed'),
+    setTempo: rec('setTempo'),
     setPolyphony: rec('setPolyphony'),
     capture: rec('capture') as MockEngine['capture'],
     loadSnapshot: rec('loadSnapshot'),

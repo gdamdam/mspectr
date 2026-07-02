@@ -40,6 +40,7 @@ export interface AudioEngineApi {
   setParams(params: SpectralParams): void
   setQuality(quality: QualityMode): void
   setSeed(seed: number): void
+  setTempo(bpm: number): void
   /** Bounded voice count (1..MAX_POLYPHONY, further capped by quality mode). */
   setPolyphony(value: number): void
 
