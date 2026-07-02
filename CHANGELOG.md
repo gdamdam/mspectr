@@ -4,6 +4,31 @@ All notable changes to mspectr are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-07-01
+
+### Added
+- **Flipbook replay** for evolving snapshots: performer-controlled `Speed`
+  (0 = freeze, negative = reverse), `Position` scrub, and a loop sub-range over
+  the captured frame sequence. Position/Speed are XY-assignable.
+- **Modulation LFO**: one tempo-syncable sine over morph, flipbook position,
+  tilt, blur, formant, or shift — so held notes evolve without hand movement.
+- **Velocity → brightness** and **key-tracked formant preservation** (high notes
+  no longer "chipmunk").
+- **Attack transient shaper**: a per-onset noise chiff plus a bright→settled
+  tilt, so notes feel played.
+- **Tone ↔ noise balance** (mini-SMS): re-weights the sinusoidal peaks against
+  the residual between them.
+- **Spectral comb** for hollow/vowel-like grouped-partial colour.
+- **Space to freeze**: a one-touch keyboard gesture to freeze/unfreeze the live
+  spectrum on the fly.
+- **Ableton Link**: the localhost bridge is now wired; its tempo drives the LFO
+  sync mode, with a compact Link status in the MIDI panel.
+- **Continue last session**: the performance patch autosaves and is restored on
+  the next visit when no shared link is present.
+
+### Fixed
+- Stopped tracking `.claude/settings.local.json`.
+
 ## [1.1.2] - 2026-06-30
 
 ### Changed

@@ -4,7 +4,7 @@
 
 **Capture a sound. Play what it is made of.**
 
-[![version](https://img.shields.io/badge/version-1.1.3-6c8f3a)](./package.json)
+[![version](https://img.shields.io/badge/version-1.2.0-6c8f3a)](./package.json)
 [![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](./LICENSE)
 [![tests](https://img.shields.io/badge/tests-377%20passing-2ea043)](#verification)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](./tsconfig.json)
