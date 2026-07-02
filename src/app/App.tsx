@@ -31,6 +31,7 @@ import { resolveParams } from '../performance/macros'
 import { getPreset } from '../performance/presets'
 import { decodePatchLink, decodeSnapshotLink } from '../sharing/patchLink'
 import { loadInstrument, saveInstrumentBundle } from '../persistence/instruments'
+import { loadLastPatch, saveLastPatch } from '../persistence/lastSession'
 import { getSnapshot } from '../persistence/snapshots'
 import { exportInstrumentJson, importInstrumentJson } from '../persistence/exportImport'
 import { createInitialState, reducer, hasLiveDerivedSnapshot, type Preferences } from './state'
@@ -107,6 +108,8 @@ export function App() {
         if (decoded) patch = decoded
       }
     }
+    // No shared link → continue the last session if one was autosaved.
+    if (!patch) patch = loadLastPatch()
     const state = createInitialState(patch, prefs)
     if (consent) state.ui.sharedLiveConsent = true
     return { state, frag: typeof location !== 'undefined' ? location.hash.slice(1) : '' }
@@ -143,6 +146,27 @@ export function App() {
     controls.engine.setParams(params)
     controls.setBendRange(params.bendRange)
   }, [controls.engine, ui.audioStarted, patch, mapping])
+
+  // --- last-session autosave ------------------------------------------------
+  // Persist the patch periodically and flush on hide so a reload can continue
+  // where the player left off. Only after audio starts, so the default patch
+  // never clobbers a real session before the user has begun.
+  useEffect(() => {
+    if (!ui.audioStarted) return
+    const save = () => saveLastPatch(stateRef.current.patch)
+    const id = window.setInterval(save, 3000)
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') save()
+    }
+    window.addEventListener('pagehide', save)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.clearInterval(id)
+      window.removeEventListener('pagehide', save)
+      document.removeEventListener('visibilitychange', onVisibility)
+      save()
+    }
+  }, [ui.audioStarted, stateRef])
 
   useEffect(() => {
     if (!ui.audioStarted) return
