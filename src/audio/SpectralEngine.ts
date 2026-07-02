@@ -783,11 +783,22 @@ export class SpectralEngine {
     const p = this.params
     const binCount = this.binCount
     const hop = this.hop
-    const ratio = Math.pow(2, (v.note - REF_NOTE + this.smTranspose + this.bendSemitones) / 12)
+    const pitchSemis = v.note - REF_NOTE + this.smTranspose + this.bendSemitones
+    const ratio = Math.pow(2, pitchSemis / 12)
     resampleSpectrum(baseMag, ratio, this.bufA)
-    applyFormant(this.bufA, this.effFormant, this.bufB, this.fmEnv, this.fmShifted)
+    // Key-tracked formant preservation: compensate the resample's envelope shift
+    // so formants stay fixed under pitch (no chipmunk) as keytrackFormant → 1.
+    const voiceFormant = clamp(this.effFormant - p.keytrackFormant * pitchSemis, -24, 24)
+    applyFormant(this.bufA, voiceFormant, this.bufB, this.fmEnv, this.fmShifted)
     applyFreqShift(this.bufB, shiftBins, this.bufA)
     applyHarmonize(this.bufA, p.harmonyVoices, intervals, p.harmonyMix, this.bufB, this.harmScratch)
+
+    // Velocity→brightness: hard notes tilt brighter, soft darker (per-voice).
+    if (p.velTilt > 0) {
+      const vt = clamp(p.velTilt * (v.velocity / 127 - 0.5) * 2, -1, 1)
+      applyTilt(this.bufB, vt, this.harmScratch, this.sampleRate, this.fftSize)
+      this.bufB.set(this.harmScratch)
+    }
 
     const velGain = VOICE_GAIN * (0.25 + 0.75 * (v.velocity / 127))
     for (let k = 0; k < binCount; k++) this.bufB[k] *= velGain

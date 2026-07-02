@@ -204,6 +204,14 @@ export interface SpectralParams {
   shift: number
   /** Spectral-envelope (formant) shift in semitones, preserving played pitch. */
   formant: number
+  /**
+   * Formant preservation under pitch, 0..1. At 1 the formant envelope is held
+   * fixed as notes transpose (no "chipmunk"); at 0 the whole spectrum resamples
+   * with pitch as before.
+   */
+  keytrackFormant: number
+  /** Velocity→brightness: hard notes tilt brighter, soft notes darker, 0..1. */
+  velTilt: number
   /** Spectral blur across neighbouring bins, 0..1. */
   blur: number
   /** Energy tilt low↔high, -1..1 (negative = darker). */
@@ -509,6 +517,8 @@ export const DEFAULT_PARAMS: SpectralParams = {
   freezePhase: 'animate',
   shift: 0,
   formant: 0,
+  keytrackFormant: 0,
+  velTilt: 0,
   blur: 0,
   tilt: 0,
   gate: 0,
@@ -573,6 +583,8 @@ export function sanitizeParams(raw: unknown): SpectralParams {
     freezePhase: oneOf(p.freezePhase, PHASE_MODES, DEFAULT_PARAMS.freezePhase),
     shift: finiteClamp(p.shift, -24, 24, DEFAULT_PARAMS.shift),
     formant: finiteClamp(p.formant, -24, 24, DEFAULT_PARAMS.formant),
+    keytrackFormant: finiteClamp(p.keytrackFormant, 0, 1, DEFAULT_PARAMS.keytrackFormant),
+    velTilt: finiteClamp(p.velTilt, 0, 1, DEFAULT_PARAMS.velTilt),
     blur: finiteClamp(p.blur, 0, 1, DEFAULT_PARAMS.blur),
     tilt: finiteClamp(p.tilt, -1, 1, DEFAULT_PARAMS.tilt),
     gate: finiteClamp(p.gate, 0, 1, DEFAULT_PARAMS.gate),

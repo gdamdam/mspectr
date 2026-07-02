@@ -372,4 +372,61 @@ describe('SpectralEngine', () => {
     const modulated = spread({ lfoTarget: 'morph', lfoDepth: 1, lfoRate: 6 })
     expect(modulated).toBeGreaterThan(off * 2 + 20)
   })
+
+  it('velocity brightens the tone and keytrack alters high-note timbre', () => {
+    const e = new SpectralEngine(SR, 'normal')
+    e.setParams({ ...DEFAULT_PARAMS, freezePhase: 'lock', reverbAmount: 0, attack: 0.005, release: 0.1, phaseMotion: 0 })
+    // Capture a two-partial source (low + high) so tilt has room to move.
+    const inp = new Float32Array(BLOCK)
+    const l = new Float32Array(BLOCK)
+    const r = new Float32Array(BLOCK)
+    let t = 0
+    for (let b = 0; b < 60; b++) {
+      for (let i = 0; i < BLOCK; i++) {
+        inp[i] = 0.4 * Math.sin((2 * Math.PI * 220 * t) / SR) + 0.4 * Math.sin((2 * Math.PI * 2200 * t) / SR)
+        t++
+      }
+      if (b === 40) e.capture('A', 'frame')
+      e.render(inp, l, r)
+    }
+    expect(e.snapshotFilled('A')).toBe(true)
+
+    const playZc = (note: number, velocity: number, params: Partial<SpectralParams>) => {
+      e.panic()
+      e.setParams({ ...DEFAULT_PARAMS, freezePhase: 'lock', reverbAmount: 0, attack: 0.005, release: 0.1, phaseMotion: 0, ...params })
+      e.noteOn(note, velocity)
+      const total = Math.floor(SR * 0.4)
+      const out = new Float32Array(total)
+      const silence = new Float32Array(BLOCK)
+      let pos = 0
+      while (pos < total) {
+        e.render(silence, l, r)
+        const take = Math.min(BLOCK, total - pos)
+        out.set(l.subarray(0, take), pos)
+        pos += take
+      }
+      e.noteOff(note)
+      let zc = 0
+      let sumSq = 0
+      const a = Math.floor(0.1 * SR)
+      for (let i = a + 1; i < total; i++) {
+        if (out[i - 1] <= 0 !== (out[i] <= 0)) zc++
+        sumSq += out[i] * out[i]
+      }
+      return { zc, rms: Math.sqrt(sumSq / (total - a)) }
+    }
+
+    // Velocity → brightness (per-voice tilt).
+    const hard = playZc(60, 127, { velTilt: 1 })
+    const soft = playZc(60, 12, { velTilt: 1 })
+    expect(hard.zc).toBeGreaterThan(soft.zc)
+
+    // Keytrack formant preservation changes a high note's timbre vs. no keytrack.
+    const noTrack = playZc(84, 100, { keytrackFormant: 0 })
+    const tracked = playZc(84, 100, { keytrackFormant: 1 })
+    expect(Number.isFinite(tracked.rms)).toBe(true)
+    expect(Number.isFinite(noTrack.rms)).toBe(true)
+    const differs = tracked.zc !== noTrack.zc || Math.abs(tracked.rms - noTrack.rms) > 1e-6
+    expect(differs).toBe(true)
+  })
 })
