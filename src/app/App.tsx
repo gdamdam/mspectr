@@ -31,7 +31,7 @@ import { resolveParams } from '../performance/macros'
 import { getPreset } from '../performance/presets'
 import { decodePatchLink, decodeSnapshotLink } from '../sharing/patchLink'
 import { loadInstrument, saveInstrumentBundle } from '../persistence/instruments'
-import { loadLastPatch, saveLastPatch } from '../persistence/lastSession'
+import { loadLastSession, saveLastPatch } from '../persistence/lastSession'
 import { getSnapshot } from '../persistence/snapshots'
 import { exportInstrumentJson, importInstrumentJson } from '../persistence/exportImport'
 import { createInitialState, reducer, hasLiveDerivedSnapshot, type Preferences } from './state'
@@ -138,11 +138,13 @@ export function App() {
         if (decoded) patch = decoded
       }
     }
-    // No shared link → continue the last session if one was autosaved.
-    if (!patch) patch = loadLastPatch()
+    // A shared link always wins and skips the launch choice. Otherwise, load
+    // any autosaved session but DON'T apply it yet — the launch screen offers an
+    // explicit "Continue Last Session" vs "Start Fresh" choice (mchord-style).
+    const lastSession = patch ? null : (loadLastSession() ?? null)
     const state = createInitialState(patch, prefs)
     if (consent) state.ui.sharedLiveConsent = true
-    return { state, frag: typeof location !== 'undefined' ? location.hash.slice(1) : '' }
+    return { state, lastSession, frag: typeof location !== 'undefined' ? location.hash.slice(1) : '' }
   }, [])
 
   const [state, dispatch] = useReducer(reducer, initial.state)
@@ -261,9 +263,14 @@ export function App() {
   }, [ui.audioStarted, controls, initial.frag])
 
   // --- action handlers ------------------------------------------------------
-  const onStart = useCallback(async () => {
+  const onStart = useCallback(async (mode: 'continue' | 'fresh' = 'fresh') => {
     setStarting(true)
     try {
+      // Continue restores the autosaved patch into state before the engine
+      // spins up; the param-resolution effect then pushes it once audio starts.
+      if (mode === 'continue' && initial.lastSession) {
+        dispatch({ type: 'load-patch', patch: initial.lastSession.patch })
+      }
       await controls.start()
     } catch (err) {
       // Surface the real cause: most failures here are the AudioWorklet module
@@ -278,7 +285,7 @@ export function App() {
     } finally {
       setStarting(false)
     }
-  }, [controls])
+  }, [controls, initial.lastSession])
 
   const onSelectPreset = useCallback(
     (presetId: string) => {
@@ -611,6 +618,8 @@ export function App() {
             sourceKind={ui.sourceKind}
             sourceLabel={ui.sourceLabel}
             starting={starting}
+            hasLastSession={initial.lastSession != null}
+            lastSavedAt={initial.lastSession?.savedAt ?? null}
             presetId={patch.presetId}
             onStart={onStart}
             onSelectPreset={onSelectPreset}

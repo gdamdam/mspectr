@@ -532,6 +532,11 @@ h2 {
   font-size: var(--step-1);
   letter-spacing: 0.12em;
 }
+/* Quieter companion to --primary: keeps the housing but drops the emission glow,
+   used for "Start Fresh" beside the lit "Continue Last Session". */
+.button--secondary {
+  font-weight: 500;
+}
 .button--danger {
   border-color: color-mix(in srgb, var(--danger) 55%, transparent);
   color: #ffd9dc;
@@ -854,6 +859,18 @@ button.select[aria-expanded='true'] .select-menu__chevron {
 /* =========================================================================
    Source panel
    ========================================================================= */
+.source__launch {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 6px;
+}
+.source__savedhint {
+  margin: 2px 0 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-align: center;
+}
 .source__status {
   display: flex;
   align-items: center;

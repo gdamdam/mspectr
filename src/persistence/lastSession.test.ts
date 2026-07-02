@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { DEFAULT_PATCH } from '../audio/contracts'
-import { LAST_PATCH_KEY, clearLastPatch, loadLastPatch, saveLastPatch } from './lastSession'
+import { LAST_PATCH_KEY, clearLastPatch, loadLastPatch, loadLastSession, saveLastPatch } from './lastSession'
 
 // In-memory localStorage stub so this runs in the node test environment.
 beforeEach(() => {
@@ -52,5 +52,22 @@ describe('last-session autosave', () => {
     expect(loadLastPatch()).toBeDefined()
     clearLastPatch()
     expect(loadLastPatch()).toBeUndefined()
+  })
+
+  it('records a savedAt timestamp on save', () => {
+    saveLastPatch(DEFAULT_PATCH)
+    const session = loadLastSession()
+    expect(session).toBeDefined()
+    expect(typeof session!.savedAt).toBe('number')
+    expect(session!.savedAt).toBeGreaterThan(0)
+  })
+
+  it('reads the legacy bare-patch shape with a null timestamp', () => {
+    // Earlier versions stored the patch object directly, without a wrapper.
+    localStorage.setItem(LAST_PATCH_KEY, JSON.stringify(DEFAULT_PATCH))
+    const session = loadLastSession()
+    expect(session).toBeDefined()
+    expect(session!.savedAt).toBeNull()
+    expect(session!.patch.params.morph).toBeCloseTo(DEFAULT_PATCH.params.morph)
   })
 })

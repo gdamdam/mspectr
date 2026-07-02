@@ -13,24 +13,44 @@ import { sanitizePatch, type SpectralPatch } from '../audio/contracts'
 
 export const LAST_PATCH_KEY = 'mspectr.lastPatch'
 
+/** A restored last session: the sanitized patch plus when it was saved. */
+export interface LastSession {
+  patch: SpectralPatch
+  /** ms since epoch, or null for legacy saves that predate the timestamp. */
+  savedAt: number | null
+}
+
 /** Persist the current patch as the "last session". Never throws. */
 export function saveLastPatch(patch: SpectralPatch): void {
   try {
-    localStorage.setItem(LAST_PATCH_KEY, JSON.stringify(patch))
+    // Wrap with a savedAt stamp so the launch screen can show when the last
+    // session was left off. loadLastSession still reads the legacy bare-patch
+    // shape written by earlier versions.
+    localStorage.setItem(LAST_PATCH_KEY, JSON.stringify({ patch, savedAt: Date.now() }))
   } catch {
     /* storage unavailable (private mode, quota) — autosave is best-effort. */
   }
 }
 
-/** Restore the last-session patch, or undefined when absent/unreadable. */
-export function loadLastPatch(): SpectralPatch | undefined {
+/** Restore the last session (patch + timestamp), or undefined when absent/unreadable. */
+export function loadLastSession(): LastSession | undefined {
   try {
     const raw = localStorage.getItem(LAST_PATCH_KEY)
     if (!raw) return undefined
-    return sanitizePatch(JSON.parse(raw))
+    const parsed = JSON.parse(raw)
+    // New shape: { patch, savedAt }. Legacy shape: the bare patch object.
+    const isWrapped = parsed && typeof parsed === 'object' && 'patch' in parsed
+    const source = isWrapped ? parsed.patch : parsed
+    const savedAt = isWrapped && typeof parsed.savedAt === 'number' ? parsed.savedAt : null
+    return { patch: sanitizePatch(source), savedAt }
   } catch {
     return undefined
   }
+}
+
+/** Restore just the last-session patch, or undefined when absent/unreadable. */
+export function loadLastPatch(): SpectralPatch | undefined {
+  return loadLastSession()?.patch
 }
 
 /** Forget the stored last session. Never throws. */

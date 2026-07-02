@@ -46,8 +46,12 @@ export interface SourcePanelProps {
   sourceKind: AudioInputKind
   sourceLabel: string
   starting: boolean
+  /** Whether an autosaved session is available to continue. */
+  hasLastSession: boolean
+  /** When the last session was saved (ms since epoch), or null if unknown. */
+  lastSavedAt: number | null
   presetId: string | null
-  onStart: () => void
+  onStart: (mode: 'continue' | 'fresh') => void
   onSelectPreset: (presetId: string) => void
   onSelectSound: (id: GeneratedSourceId) => void
   onPickFile: (file: File) => void
@@ -71,6 +75,8 @@ export function SourcePanel({
   sourceKind,
   sourceLabel,
   starting,
+  hasLastSession,
+  lastSavedAt,
   presetId,
   onStart,
   onSelectPreset,
@@ -90,6 +96,18 @@ export function SourcePanel({
   // "current source" state), but the custom Select needs a value to display the
   // last pick. Kept local so it reflects the selection without touching engine state.
   const [soundId, setSoundId] = useState<string>('')
+  // Which launch button was pressed, so its label can show progress.
+  const [pending, setPending] = useState<'continue' | 'fresh' | null>(null)
+
+  const start = (mode: 'continue' | 'fresh') => {
+    setPending(mode)
+    onStart(mode)
+  }
+
+  const savedLabel =
+    lastSavedAt != null
+      ? new Date(lastSavedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+      : null
 
   const onFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
@@ -119,15 +137,29 @@ export function SourcePanel({
       </h2>
 
       {!audioStarted ? (
-        <button
-          type="button"
-          className="button button--primary button--start"
-          title="Start the audio engine — needed before capturing or playing"
-          onClick={onStart}
-          disabled={starting}
-        >
-          {starting ? 'Starting…' : 'Start audio'}
-        </button>
+        <div className="source__launch">
+          {hasLastSession && (
+            <button
+              type="button"
+              className="button button--primary button--start"
+              title="Resume the patch from your last session"
+              onClick={() => start('continue')}
+              disabled={starting}
+            >
+              {pending === 'continue' && starting ? 'Restoring…' : 'Continue Last Session'}
+            </button>
+          )}
+          <button
+            type="button"
+            className={`button button--start ${hasLastSession ? 'button--secondary' : 'button--primary'}`}
+            title="Start the audio engine — needed before capturing or playing"
+            onClick={() => start('fresh')}
+            disabled={starting}
+          >
+            {pending === 'fresh' && starting ? 'Starting…' : hasLastSession ? 'Start Fresh' : 'Start audio'}
+          </button>
+          {savedLabel && <p className="source__savedhint">Last session saved {savedLabel}</p>}
+        </div>
       ) : (
         <p className="source__status" role="status">
           <span className="source__dot" data-kind={sourceKind} aria-hidden="true" />
