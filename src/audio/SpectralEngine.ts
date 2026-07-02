@@ -89,11 +89,26 @@ class Voice {
   ola: OverlapAdd
   phaseAcc: Float32Array
   drift: (amount: number) => number
+  /** Onset transient level, 1 at note-on decaying toward 0 (attack shaper). */
+  transient = 0
+  /** Per-voice white-noise PRNG state (deterministic given the seed). */
+  private noiseState: number
 
   constructor(fft: FFT, hop: number, binCount: number, seed: number) {
     this.ola = new OverlapAdd(fft, hop)
     this.phaseAcc = new Float32Array(binCount)
     this.drift = makePhaseDrift(seed)
+    this.noiseState = (seed ^ 0x2545f491) >>> 0 || 1
+  }
+
+  /** Deterministic white noise in [-1, 1] via xorshift32. */
+  noise(): number {
+    let x = this.noiseState
+    x ^= x << 13
+    x ^= x >>> 17
+    x ^= x << 5
+    this.noiseState = x >>> 0
+    return (this.noiseState / 0xffffffff) * 2 - 1
   }
 
   reset(): void {
@@ -101,6 +116,7 @@ class Voice {
     this.state = 'idle'
     this.env = 0
     this.prevEnv = 0
+    this.transient = 0
     this.ola.reset()
     this.phaseAcc.fill(0)
   }
@@ -322,6 +338,7 @@ export class SpectralEngine {
     v.note = n
     v.velocity = clamp(Math.round(velocity), 1, 127)
     v.state = 'attack'
+    v.transient = 1
     if (!alloc.stolen) {
       v.env = 0
       v.prevEnv = 0
@@ -493,6 +510,7 @@ export class SpectralEngine {
       v.note = REF_NOTE
       v.velocity = 100
       v.state = 'attack'
+      v.transient = 1
     } else if (v.active) {
       v.state = 'release'
     }
@@ -793,10 +811,13 @@ export class SpectralEngine {
     applyFreqShift(this.bufB, shiftBins, this.bufA)
     applyHarmonize(this.bufA, p.harmonyVoices, intervals, p.harmonyMix, this.bufB, this.harmScratch)
 
-    // Velocity→brightness: hard notes tilt brighter, soft darker (per-voice).
-    if (p.velTilt > 0) {
-      const vt = clamp(p.velTilt * (v.velocity / 127 - 0.5) * 2, -1, 1)
-      applyTilt(this.bufB, vt, this.harmScratch, this.sampleRate, this.fftSize)
+    // Per-voice brightness tilt: velocity (hard = brighter) plus a bright onset
+    // that settles as the transient decays.
+    const velT = p.velTilt > 0 ? p.velTilt * (v.velocity / 127 - 0.5) * 2 : 0
+    const transT = p.transient * v.transient * 0.9
+    const extraTilt = clamp(velT + transT, -1, 1)
+    if (extraTilt !== 0) {
+      applyTilt(this.bufB, extraTilt, this.harmScratch, this.sampleRate, this.fftSize)
       this.bufB.set(this.harmScratch)
     }
 
@@ -834,6 +855,20 @@ export class SpectralEngine {
       this.hopR[i] += s * rg
     }
     v.prevEnv = v.env
+
+    // Attack transient: a brief seeded noise chiff at onset, sitting outside the
+    // amplitude envelope so it survives the attack ramp, then decaying fast.
+    if (p.transient > 0 && v.transient > 1e-3) {
+      const nAmp = p.transient * v.transient * (0.25 + 0.75 * (v.velocity / 127)) * 0.15
+      for (let i = 0; i < hop; i++) {
+        const nz = v.noise() * nAmp
+        this.hopL[i] += nz * lg
+        this.hopR[i] += nz * rg
+      }
+    }
+    // Decay the transient toward 0 (~20 ms time constant).
+    v.transient *= Math.exp(-hopSeconds / 0.02)
+    if (v.transient < 1e-4) v.transient = 0
   }
 
   private advanceEnvelope(v: Voice, dt: number): void {

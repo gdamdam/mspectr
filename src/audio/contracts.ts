@@ -212,6 +212,12 @@ export interface SpectralParams {
   keytrackFormant: number
   /** Velocity→brightness: hard notes tilt brighter, soft notes darker, 0..1. */
   velTilt: number
+  /**
+   * Attack transient shaper, 0..1. Adds a brief per-onset noise burst and a
+   * bright→settled tilt over the first ~30 ms so notes feel "played" — spectral
+   * synthesis otherwise smears attacks (SPEAR). 0 disables it.
+   */
+  transient: number
   /** Spectral blur across neighbouring bins, 0..1. */
   blur: number
   /** Energy tilt low↔high, -1..1 (negative = darker). */
@@ -519,6 +525,7 @@ export const DEFAULT_PARAMS: SpectralParams = {
   formant: 0,
   keytrackFormant: 0,
   velTilt: 0,
+  transient: 0,
   blur: 0,
   tilt: 0,
   gate: 0,
@@ -585,6 +592,7 @@ export function sanitizeParams(raw: unknown): SpectralParams {
     formant: finiteClamp(p.formant, -24, 24, DEFAULT_PARAMS.formant),
     keytrackFormant: finiteClamp(p.keytrackFormant, 0, 1, DEFAULT_PARAMS.keytrackFormant),
     velTilt: finiteClamp(p.velTilt, 0, 1, DEFAULT_PARAMS.velTilt),
+    transient: finiteClamp(p.transient, 0, 1, DEFAULT_PARAMS.transient),
     blur: finiteClamp(p.blur, 0, 1, DEFAULT_PARAMS.blur),
     tilt: finiteClamp(p.tilt, -1, 1, DEFAULT_PARAMS.tilt),
     gate: finiteClamp(p.gate, 0, 1, DEFAULT_PARAMS.gate),

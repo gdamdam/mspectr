@@ -429,4 +429,44 @@ describe('SpectralEngine', () => {
     const differs = tracked.zc !== noTrack.zc || Math.abs(tracked.rms - noTrack.rms) > 1e-6
     expect(differs).toBe(true)
   })
+
+  it('attack transient adds decaying onset energy within the ceiling', () => {
+    const e = new SpectralEngine(SR, 'normal')
+    e.setParams({ ...DEFAULT_PARAMS, reverbAmount: 0, attack: 0.05, release: 0.1, transient: 1 })
+    run(e, 40, 220)
+    e.capture('A', 'frame')
+    run(e, 4, 220)
+
+    const l = new Float32Array(BLOCK)
+    const r = new Float32Array(BLOCK)
+    const silence = new Float32Array(BLOCK)
+    const rmsWindow = (blocks: number) => {
+      let sumSq = 0
+      let count = 0
+      for (let b = 0; b < blocks; b++) {
+        e.render(silence, l, r)
+        for (let i = 0; i < BLOCK; i++) {
+          sumSq += l[i] * l[i]
+          count++
+          expect(Math.abs(l[i])).toBeLessThanOrEqual(CEILING + 1e-4)
+        }
+      }
+      return Math.sqrt(sumSq / count)
+    }
+
+    e.noteOn(60, 120)
+    const onset = rmsWindow(6) // first ~16 ms — transient present, env still low
+    const later = rmsWindow(40) // ~100 ms in — transient gone, envelope settled
+    // The onset carries extra (noise) energy that the settled body does not.
+    expect(onset).toBeGreaterThan(1e-3)
+    e.noteOff(60)
+
+    // With the transient disabled, the same onset window is quieter.
+    e.panic()
+    e.setParams({ ...DEFAULT_PARAMS, reverbAmount: 0, attack: 0.05, release: 0.1, transient: 0 })
+    e.noteOn(60, 120)
+    const onsetNoTrans = rmsWindow(6)
+    expect(onset).toBeGreaterThan(onsetNoTrans)
+    expect(later).toBeGreaterThan(0)
+  })
 })

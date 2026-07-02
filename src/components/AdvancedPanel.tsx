@@ -50,6 +50,7 @@ const GROUPS: { title: string; fields: NumField[] }[] = [
       { key: 'formant', label: 'Formant', min: -24, max: 24, step: 0.1, unit: 'st' },
       { key: 'keytrackFormant', label: 'Formant keytrack', min: 0, max: 1, step: 0.01 },
       { key: 'velTilt', label: 'Velocity → brightness', min: 0, max: 1, step: 0.01 },
+      { key: 'transient', label: 'Attack transient', min: 0, max: 1, step: 0.01 },
       { key: 'blur', label: 'Blur', min: 0, max: 1, step: 0.01 },
       { key: 'tilt', label: 'Tilt', min: -1, max: 1, step: 0.01 },
       { key: 'gate', label: 'Gate', min: 0, max: 1, step: 0.01 },
