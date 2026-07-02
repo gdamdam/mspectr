@@ -230,6 +230,9 @@ export interface SpectralParams {
    * (breath/noise) between peaks. A highly playable macro dimension.
    */
   toneNoise: number
+  /** Spectral comb depth, 0..1. Carves periodic notches for hollow/vowel-like
+   * timbres (grouped-partial shaping). 0 disables. */
+  comb: number
   /** Number of extra harmonized spectral voices, 0..MAX_HARMONY_VOICES. */
   harmonyVoices: number
   harmonyInterval: IntervalSetId
@@ -536,6 +539,7 @@ export const DEFAULT_PARAMS: SpectralParams = {
   tilt: 0,
   gate: 0,
   toneNoise: 0.5,
+  comb: 0,
   harmonyVoices: 0,
   harmonyInterval: 'octaves',
   harmonyMix: 0.5,
@@ -604,6 +608,7 @@ export function sanitizeParams(raw: unknown): SpectralParams {
     tilt: finiteClamp(p.tilt, -1, 1, DEFAULT_PARAMS.tilt),
     gate: finiteClamp(p.gate, 0, 1, DEFAULT_PARAMS.gate),
     toneNoise: finiteClamp(p.toneNoise, 0, 1, DEFAULT_PARAMS.toneNoise),
+    comb: finiteClamp(p.comb, 0, 1, DEFAULT_PARAMS.comb),
     harmonyVoices: finiteInt(p.harmonyVoices, 0, MAX_HARMONY_VOICES, DEFAULT_PARAMS.harmonyVoices),
     harmonyInterval: oneOf(p.harmonyInterval, INTERVAL_SET_IDS, DEFAULT_PARAMS.harmonyInterval),
     harmonyMix: finiteClamp(p.harmonyMix, 0, 1, DEFAULT_PARAMS.harmonyMix),

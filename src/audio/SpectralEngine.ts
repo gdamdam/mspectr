@@ -695,6 +695,17 @@ export class SpectralEngine {
       for (let k = 0; k < bc; k++) this.s2[k] *= this.s1[k] * toneW + (1 - this.s1[k]) * noiseW
     }
 
+    // Spectral comb: periodic notches across the bin axis (hollow/vowel colour).
+    if (p.comb > 0) {
+      const bc = this.binCount
+      const period = 6 // bins between notches
+      for (let k = 0; k < bc; k++) {
+        // 1 at anti-notch, (1-comb) at notch — attenuation only, limiter-safe.
+        const notch = 0.5 + 0.5 * Math.cos((TWO_PI * k) / period)
+        this.s2[k] *= 1 - p.comb * (1 - notch)
+      }
+    }
+
     hopL.fill(0)
     hopR.fill(0)
 

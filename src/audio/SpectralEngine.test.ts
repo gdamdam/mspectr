@@ -479,6 +479,36 @@ describe('SpectralEngine', () => {
     expect(Number.isFinite(tonal) && Number.isFinite(noisy)).toBe(true)
   })
 
+  it('comb attenuates and stays within the ceiling', () => {
+    const e = new SpectralEngine(SR, 'normal')
+    e.setParams({ ...DEFAULT_PARAMS, reverbAmount: 0, attack: 0.005, release: 0.1 })
+    run(e, 40, 300)
+    e.capture('A', 'frame')
+    run(e, 4, 300)
+    const rmsOf = (comb: number) => {
+      e.panic()
+      e.setParams({ ...DEFAULT_PARAMS, reverbAmount: 0, attack: 0.005, release: 0.1, freezePhase: 'lock', phaseMotion: 0, comb })
+      e.noteOn(60, 110)
+      const total = Math.floor(SR * 0.25)
+      let sumSq = 0
+      const silence = new Float32Array(BLOCK)
+      const l = new Float32Array(BLOCK)
+      const r = new Float32Array(BLOCK)
+      let done = 0
+      while (done < total) {
+        e.render(silence, l, r)
+        for (let i = 0; i < BLOCK && done < total; i++, done++) {
+          sumSq += l[i] * l[i]
+          expect(Math.abs(l[i])).toBeLessThanOrEqual(CEILING + 1e-4)
+        }
+      }
+      e.noteOff(60)
+      return Math.sqrt(sumSq / total)
+    }
+    // Comb is attenuation-only, so it cannot make the note louder.
+    expect(rmsOf(1)).toBeLessThanOrEqual(rmsOf(0) + 1e-6)
+  })
+
   it('capture after freeze reflects the frozen spectrum, not later input', () => {
     // Freeze on a low tone, then feed a very different high tone; the capture
     // must hold the frozen (low) spectrum. Guards the "capture ignores freeze"

@@ -55,6 +55,7 @@ const GROUPS: { title: string; fields: NumField[] }[] = [
       { key: 'tilt', label: 'Tilt', min: -1, max: 1, step: 0.01 },
       { key: 'gate', label: 'Gate', min: 0, max: 1, step: 0.01 },
       { key: 'toneNoise', label: 'Tone ↔ noise', min: 0, max: 1, step: 0.01 },
+      { key: 'comb', label: 'Comb', min: 0, max: 1, step: 0.01 },
     ],
   },
   {
