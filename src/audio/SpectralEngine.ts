@@ -676,7 +676,12 @@ export class SpectralEngine {
     this.fifoCount += hop
   }
 
-  /** Advance the shared evolving-frame cursor, ping-ponging so it never clicks. */
+  /**
+   * Advance the shared evolving-frame cursor within the performer-set loop
+   * region, ping-ponging at the boundaries so playback never clicks. `frameSpeed`
+   * scales the replay rate (0 = freeze, negative = start in reverse) and
+   * `framePosition` scrubs manually while frozen. Static snapshots pin at 0.
+   */
   private advanceFrameCursor(): void {
     const fcA = this.slotA.filled ? this.slotA.frameCount : 1
     const fcB = this.slotB.filled ? this.slotB.frameCount : 1
@@ -685,18 +690,37 @@ export class SpectralEngine {
       this.frameCursor = 0
       return
     }
-    const fhop = this.slotA.filled && this.slotA.frameCount > 1 ? this.slotA.frameHop : this.slotB.frameHop
-    const step = (this.hop / Math.max(1, fhop)) * this.frameDir
-    let pos = this.frameCursor + step
+    const p = this.params
     const maxPos = maxFrames - 1
-    if (pos >= maxPos) {
-      pos = maxPos
-      this.frameDir = -1
-    } else if (pos <= 0) {
-      pos = 0
-      this.frameDir = 1
+    // Loop sub-range in frame units (tolerate reversed handles).
+    let lo = clamp(p.frameLoopStart, 0, 1) * maxPos
+    let hi = clamp(p.frameLoopEnd, 0, 1) * maxPos
+    if (hi < lo) {
+      const t = lo
+      lo = hi
+      hi = t
     }
-    this.frameCursor = pos
+    if (hi - lo < 1e-4) {
+      this.frameCursor = lo
+      return
+    }
+    if (p.frameSpeed === 0) {
+      // Frozen: the scrub position maps directly into the loop region.
+      this.frameCursor = lo + clamp(p.framePosition, 0, 1) * (hi - lo)
+      return
+    }
+    const fhop = this.slotA.filled && this.slotA.frameCount > 1 ? this.slotA.frameHop : this.slotB.frameHop
+    const step = (this.hop / Math.max(1, fhop)) * Math.abs(p.frameSpeed)
+    const dir = p.frameSpeed < 0 ? -this.frameDir : this.frameDir
+    let pos = this.frameCursor + step * dir
+    if (pos >= hi) {
+      pos = hi
+      this.frameDir = -this.frameDir
+    } else if (pos <= lo) {
+      pos = lo
+      this.frameDir = -this.frameDir
+    }
+    this.frameCursor = clamp(pos, lo, hi)
   }
 
   /** Interpolate a filled slot's frame at the cursor into its current-frame buffer. */

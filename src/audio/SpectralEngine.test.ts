@@ -266,4 +266,66 @@ describe('SpectralEngine', () => {
     const late = zc(0.4, 0.63)
     expect(late).toBeGreaterThan(early * 1.3)
   })
+
+  it('flipbook: frameSpeed=0 freezes and framePosition scrubs the sequence', () => {
+    // Capture a dark→bright evolving snapshot (same source as the motion test).
+    const e = new SpectralEngine(SR, 'normal')
+    let frameCount = 0
+    e.setOnCaptured((_s, snap) => (frameCount = snap.frameCount))
+    e.setParams({ ...DEFAULT_PARAMS, freezePhase: 'lock', reverbAmount: 0, attack: 0.005, release: 0.1, phaseMotion: 0 })
+    const inp = new Float32Array(BLOCK)
+    const l = new Float32Array(BLOCK)
+    const r = new Float32Array(BLOCK)
+    let n = 0
+    for (let b = 0; b < 320; b++) {
+      for (let i = 0; i < BLOCK; i++) {
+        const prog = Math.min(1, n / (SR * 0.95))
+        inp[i] = 0.5 * ((1 - prog) * Math.sin((2 * Math.PI * 220 * n) / SR) + prog * Math.sin((2 * Math.PI * 1200 * n) / SR))
+        n++
+      }
+      if (b === 20) e.capture('A', 'evolving')
+      e.render(inp, l, r)
+    }
+    expect(frameCount).toBeGreaterThan(1)
+
+    // Play a held note at a fixed flipbook position and return zero-crossing rate
+    // (brightness proxy) over ~0.5 s of steady output.
+    const zcAt = (framePosition: number) => {
+      e.panic()
+      e.setParams({ ...DEFAULT_PARAMS, freezePhase: 'lock', reverbAmount: 0, attack: 0.005, release: 0.1, phaseMotion: 0, frameSpeed: 0, framePosition })
+      e.noteOn(60, 110)
+      const out = new Float32Array(Math.floor(SR * 0.6))
+      const silence = new Float32Array(BLOCK)
+      let pos = 0
+      while (pos < out.length) {
+        e.render(silence, l, r)
+        const take = Math.min(BLOCK, out.length - pos)
+        out.set(l.subarray(0, take), pos)
+        pos += take
+      }
+      e.noteOff(60)
+      let c = 0
+      const a = Math.floor(0.15 * SR)
+      const bEnd = Math.floor(0.55 * SR)
+      const half = Math.floor((a + bEnd) / 2)
+      let c1 = 0
+      let c2 = 0
+      for (let i = a + 1; i < bEnd; i++) {
+        if (out[i - 1] <= 0 !== (out[i] <= 0)) {
+          c++
+          if (i < half) c1++
+          else c2++
+        }
+      }
+      // Frozen playback should not evolve: the two halves match closely.
+      const steady = Math.abs(c1 - c2) <= Math.max(6, c * 0.25)
+      return { zc: c, steady }
+    }
+
+    const dark = zcAt(0) // first frame region
+    const bright = zcAt(1) // last frame region
+    expect(dark.steady).toBe(true)
+    expect(bright.steady).toBe(true)
+    expect(bright.zc).toBeGreaterThan(dark.zc * 1.3)
+  })
 })

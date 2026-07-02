@@ -170,6 +170,19 @@ export const GENERATED_SOURCE_IDS: readonly GeneratedSourceId[] = [
 export interface SpectralParams {
   /** A↔B morph position, 0 = A, 1 = B. */
   morph: number
+  /**
+   * Multi-frame ("flipbook") replay controls for evolving snapshots.
+   *  - frameSpeed: replay-rate multiplier over the captured frame rate,
+   *    -2..2. 0 = freeze on the current position; negative = reverse.
+   *  - framePosition: manual scrub within the loop region, 0..1. Authoritative
+   *    only while frozen (frameSpeed === 0); ignored while auto-advancing.
+   *  - frameLoopStart/frameLoopEnd: sub-range of the frame sequence to scan,
+   *    each 0..1 of the full sequence. Static snapshots ignore all four.
+   */
+  frameSpeed: number
+  framePosition: number
+  frameLoopStart: number
+  frameLoopEnd: number
   /** Hold the current spectrum instead of tracking live input. */
   freeze: boolean
   freezePhase: PhaseMode
@@ -467,6 +480,10 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback
 
 export const DEFAULT_PARAMS: SpectralParams = {
   morph: 0,
+  frameSpeed: 1,
+  framePosition: 0,
+  frameLoopStart: 0,
+  frameLoopEnd: 1,
   freeze: false,
   freezePhase: 'animate',
   shift: 0,
@@ -523,6 +540,10 @@ export function sanitizeParams(raw: unknown): SpectralParams {
   const p = (raw ?? {}) as Partial<SpectralParams>
   return {
     morph: finiteClamp(p.morph, 0, 1, DEFAULT_PARAMS.morph),
+    frameSpeed: finiteClamp(p.frameSpeed, -2, 2, DEFAULT_PARAMS.frameSpeed),
+    framePosition: finiteClamp(p.framePosition, 0, 1, DEFAULT_PARAMS.framePosition),
+    frameLoopStart: finiteClamp(p.frameLoopStart, 0, 1, DEFAULT_PARAMS.frameLoopStart),
+    frameLoopEnd: finiteClamp(p.frameLoopEnd, 0, 1, DEFAULT_PARAMS.frameLoopEnd),
     freeze: Boolean(p.freeze),
     freezePhase: oneOf(p.freezePhase, PHASE_MODES, DEFAULT_PARAMS.freezePhase),
     shift: finiteClamp(p.shift, -24, 24, DEFAULT_PARAMS.shift),

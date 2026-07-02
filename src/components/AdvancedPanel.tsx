@@ -63,6 +63,17 @@ const GROUPS: { title: string; fields: NumField[] }[] = [
     fields: [{ key: 'phaseMotion', label: 'Phase motion', min: 0, max: 1, step: 0.01 }],
   },
   {
+    // Multi-frame ("flipbook") replay of an evolving snapshot. No effect on
+    // static (single-frame) captures.
+    title: 'Flipbook',
+    fields: [
+      { key: 'frameSpeed', label: 'Speed', min: -2, max: 2, step: 0.01, unit: '×' },
+      { key: 'framePosition', label: 'Position', min: 0, max: 1, step: 0.01 },
+      { key: 'frameLoopStart', label: 'Loop start', min: 0, max: 1, step: 0.01 },
+      { key: 'frameLoopEnd', label: 'Loop end', min: 0, max: 1, step: 0.01 },
+    ],
+  },
+  {
     title: 'Envelope',
     fields: [
       { key: 'attack', label: 'Attack', min: 0, max: 10, step: 0.01, unit: 's' },

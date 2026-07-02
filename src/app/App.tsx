@@ -63,6 +63,8 @@ function axisLabel(key: keyof SpectralParams): string {
     harmonyMix: 'Harmony',
     reverbAmount: 'Reverb',
     phaseMotion: 'Motion',
+    framePosition: 'Position',
+    frameSpeed: 'Speed',
   }
   return map[key] ?? String(key)
 }
