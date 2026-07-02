@@ -224,6 +224,12 @@ export interface SpectralParams {
   tilt: number
   /** Spectral gate threshold, 0..1 (relative to per-frame peak). */
   gate: number
+  /**
+   * Tone↔noise balance (mini-SMS), 0..1. 0.5 is neutral (unchanged). Toward 1
+   * emphasizes the sinusoidal peaks (tonal); toward 0 emphasizes the residual
+   * (breath/noise) between peaks. A highly playable macro dimension.
+   */
+  toneNoise: number
   /** Number of extra harmonized spectral voices, 0..MAX_HARMONY_VOICES. */
   harmonyVoices: number
   harmonyInterval: IntervalSetId
@@ -529,6 +535,7 @@ export const DEFAULT_PARAMS: SpectralParams = {
   blur: 0,
   tilt: 0,
   gate: 0,
+  toneNoise: 0.5,
   harmonyVoices: 0,
   harmonyInterval: 'octaves',
   harmonyMix: 0.5,
@@ -596,6 +603,7 @@ export function sanitizeParams(raw: unknown): SpectralParams {
     blur: finiteClamp(p.blur, 0, 1, DEFAULT_PARAMS.blur),
     tilt: finiteClamp(p.tilt, -1, 1, DEFAULT_PARAMS.tilt),
     gate: finiteClamp(p.gate, 0, 1, DEFAULT_PARAMS.gate),
+    toneNoise: finiteClamp(p.toneNoise, 0, 1, DEFAULT_PARAMS.toneNoise),
     harmonyVoices: finiteInt(p.harmonyVoices, 0, MAX_HARMONY_VOICES, DEFAULT_PARAMS.harmonyVoices),
     harmonyInterval: oneOf(p.harmonyInterval, INTERVAL_SET_IDS, DEFAULT_PARAMS.harmonyInterval),
     harmonyMix: finiteClamp(p.harmonyMix, 0, 1, DEFAULT_PARAMS.harmonyMix),

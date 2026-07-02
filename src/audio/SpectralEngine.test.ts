@@ -430,6 +430,55 @@ describe('SpectralEngine', () => {
     expect(differs).toBe(true)
   })
 
+  it('tone↔noise balance re-weights peaks vs. residual', () => {
+    const e = new SpectralEngine(SR, 'normal')
+    e.setParams({ ...DEFAULT_PARAMS })
+    const inp = new Float32Array(BLOCK)
+    const l = new Float32Array(BLOCK)
+    const r = new Float32Array(BLOCK)
+    let t = 0
+    let seed = 12345
+    const noise = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff
+      return (seed / 0x7fffffff) * 2 - 1
+    }
+    for (let b = 0; b < 60; b++) {
+      for (let i = 0; i < BLOCK; i++) {
+        inp[i] = 0.6 * Math.sin((2 * Math.PI * 300 * t) / SR) + 0.25 * noise()
+        t++
+      }
+      if (b === 40) e.capture('A', 'frame')
+      e.render(inp, l, r)
+    }
+    expect(e.snapshotFilled('A')).toBe(true)
+
+    const rmsOf = (toneNoise: number) => {
+      e.panic()
+      e.setParams({ ...DEFAULT_PARAMS, reverbAmount: 0, attack: 0.005, release: 0.1, freezePhase: 'lock', phaseMotion: 0, toneNoise })
+      e.noteOn(60, 110)
+      const total = Math.floor(SR * 0.3)
+      let sumSq = 0
+      const silence = new Float32Array(BLOCK)
+      let done = 0
+      while (done < total) {
+        e.render(silence, l, r)
+        for (let i = 0; i < BLOCK && done < total; i++, done++) {
+          sumSq += l[i] * l[i]
+          expect(Math.abs(l[i])).toBeLessThanOrEqual(CEILING + 1e-4)
+        }
+      }
+      e.noteOff(60)
+      return Math.sqrt(sumSq / total)
+    }
+
+    // A tone-dominant source keeps most energy in its peaks: emphasizing the
+    // tonal part (toneNoise=1) is louder than emphasizing the residual (0).
+    const tonal = rmsOf(1)
+    const noisy = rmsOf(0)
+    expect(tonal).toBeGreaterThan(noisy)
+    expect(Number.isFinite(tonal) && Number.isFinite(noisy)).toBe(true)
+  })
+
   it('capture after freeze reflects the frozen spectrum, not later input', () => {
     // Freeze on a low tone, then feed a very different high tone; the capture
     // must hold the frozen (low) spectrum. Guards the "capture ignores freeze"

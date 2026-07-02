@@ -676,6 +676,25 @@ export class SpectralEngine {
     applyBlur(this.s2, effBlur, this.s1)
     this.gate.process(this.s1, p.gate, this.s2) // s2 = shared processed base
 
+    // Tone↔noise balance (mini-SMS): rebalance sinusoidal peaks vs. the residual
+    // between them. Neutral at 0.5 (no-op). Peaks are found on the shared base and
+    // widened ±2 bins to include each partial's main lobe. s1 is free here.
+    if (p.toneNoise !== 0.5) {
+      const bc = this.binCount
+      const peakCount = findSpectralPeaks(this.s2, this.peaks)
+      this.s1.fill(0)
+      for (let pi = 0; pi < peakCount; pi++) {
+        const b = this.peaks[pi]
+        for (let d = -2; d <= 2; d++) {
+          const k = b + d
+          if (k >= 0 && k < bc) this.s1[k] = 1
+        }
+      }
+      const toneW = 2 * p.toneNoise
+      const noiseW = 2 * (1 - p.toneNoise)
+      for (let k = 0; k < bc; k++) this.s2[k] *= this.s1[k] * toneW + (1 - this.s1[k]) * noiseW
+    }
+
     hopL.fill(0)
     hopR.fill(0)
 
