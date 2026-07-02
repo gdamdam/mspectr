@@ -91,6 +91,36 @@ function loadPrefs(): Preferences | undefined {
   }
 }
 
+/** Compact dB slider for the header (master volume / input gain). */
+function HeaderLevel({
+  label,
+  title,
+  value,
+  onChange,
+}: {
+  label: string
+  title: string
+  value: number
+  onChange: (v: number) => void
+}) {
+  return (
+    <label className="topbar__level" title={title}>
+      <span className="topbar__level-label">{label}</span>
+      <input
+        type="range"
+        className="slider topbar__level-slider"
+        min={-24}
+        max={24}
+        step={0.5}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        aria-label={`${label} ${value} dB`}
+        aria-valuetext={`${value} dB`}
+      />
+    </label>
+  )
+}
+
 export function App() {
   // Decode any shared link / persisted prefs once, before first render.
   const initial = useMemo(() => {
@@ -459,6 +489,20 @@ export function App() {
           >
             capture a sound · play what it is made of
           </span>
+        </div>
+        <div className="topbar__levels">
+          <HeaderLevel
+            label="Vol"
+            title="Master output volume (dB) — feeds the final limiter"
+            value={patch.params.outputGainDb}
+            onChange={(v) => dispatch({ type: 'edit-param', key: 'outputGainDb', value: v })}
+          />
+          <HeaderLevel
+            label="Gain"
+            title="Input gain into the analyzer (dB)"
+            value={patch.params.inputGainDb}
+            onChange={(v) => dispatch({ type: 'edit-param', key: 'inputGainDb', value: v })}
+          />
         </div>
         <nav className="topbar__nav" aria-label="Tools">
           <button

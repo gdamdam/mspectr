@@ -292,6 +292,30 @@ h2 {
   flex-wrap: wrap;
 }
 
+/* Master volume + input gain, kept compact so they ride the topbar without
+   crowding the wordmark or the tool chips. */
+.topbar__levels {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.topbar__level {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-data);
+  font-size: var(--step--1);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.topbar__level-label {
+  white-space: nowrap;
+}
+.topbar__level-slider {
+  width: 88px;
+}
+
 .stage {
   display: grid;
   /* Left = performance (display + morph + macros); right = material pipeline
