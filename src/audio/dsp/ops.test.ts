@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { dbToGain } from '../contracts'
 import { applyBlur, blurRadius } from './blur'
 import { FrameAverager, captureFrame } from './freeze'
-import { applyFormant } from './formant'
+import { applyFormant, spectralEnvelope } from './formant'
 import { SpectralGate } from './gate'
 import { applyHarmonize } from './harmonize'
 import { StereoLimiter } from './limiter'
@@ -127,6 +127,68 @@ describe('FORMANT', () => {
     expect(out[40]).toBeGreaterThan(out[39])
     expect(out[40]).toBeGreaterThan(out[41])
     expect(allFinite(out)).toBe(true)
+  })
+})
+
+describe('formant-preserving transposition (keytrack)', () => {
+  // Mirrors the SpectralEngine per-voice chain: resampleSpectrum for pitch, then
+  // applyFormant with a keytrack-compensating envelope shift. With keytrack ON the
+  // engine sets voiceFormant = -pitchSemis, undoing the resample's envelope drift.
+  const n = 256
+  const center = 100 // formant (envelope) peak bin
+  const bump = (k: number) => 0.05 + Math.exp(-((k - center) ** 2) / (2 * 25 * 25))
+  function harmonicTone(): Float32Array {
+    const mag = new Float32Array(n)
+    for (let k = 0; k < n; k++) mag[k] = bump(k)
+    // Sharp partials every 10 bins, weighted by the envelope.
+    for (let h = 10; h < n; h += 10) mag[h] += 2 * bump(h)
+    return mag
+  }
+  const argmax = (a: Float32Array) => {
+    let bi = 0
+    for (let i = 1; i < a.length; i++) if (a[i] > a[bi]) bi = i
+    return bi
+  }
+
+  it('+12 with keytrack ON keeps the envelope peak fixed while partials move up', () => {
+    const mag = harmonicTone()
+    // Original: partial at bin 10, gap at 20 is spanned — envelope peak near center.
+    expect(mag[10]).toBeGreaterThan(mag[15])
+
+    // Pitch up an octave (ratio 2): resampleSpectrum moves partials AND envelope up.
+    const resampled = new Float32Array(n)
+    resampleSpectrum(mag, 2, resampled)
+    const env = new Float32Array(n)
+
+    // Keytrack OFF baseline (voiceFormant 0): envelope peak drifts up ~2x (chipmunk).
+    spectralEnvelope(resampled, env)
+    const peakNoTrack = argmax(env)
+    expect(peakNoTrack).toBeGreaterThan(center + 50)
+
+    // Keytrack ON: voiceFormant = -12 re-imposes the original envelope.
+    const kept = new Float32Array(n)
+    applyFormant(resampled, -12, kept, new Float32Array(n), new Float32Array(n))
+    spectralEnvelope(kept, env)
+    const peakKept = argmax(env)
+    // Envelope peak stays near the original center, far below the chipmunk peak.
+    expect(Math.abs(peakKept - center)).toBeLessThan(40)
+    expect(peakKept).toBeLessThan(peakNoTrack - 40)
+
+    // Partials still moved: original partial at bin 10, now energy at bin 20 not 10.
+    expect(kept[20]).toBeGreaterThan(kept[10] * 3)
+    expect(allFinite(kept)).toBe(true)
+  })
+
+  it('keytrack OFF is byte-identical to plain resampling (backward-compat default)', () => {
+    const mag = harmonicTone()
+    const ratio = Math.pow(2, 7 / 12)
+    const resampled = new Float32Array(n)
+    resampleSpectrum(mag, ratio, resampled)
+    // Default keytrackFormant 0 (and formant 0) ⇒ engine calls applyFormant with 0
+    // semitones ⇒ identity ⇒ output equals plain resampling, bit for bit.
+    const out = new Float32Array(n)
+    applyFormant(resampled, 0, out, new Float32Array(n), new Float32Array(n))
+    expect(Array.from(out)).toEqual(Array.from(resampled))
   })
 })
 

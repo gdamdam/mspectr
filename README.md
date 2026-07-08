@@ -4,9 +4,9 @@
 
 **Capture a sound. Play what it is made of.**
 
-[![version](https://img.shields.io/badge/version-1.2.3-6c8f3a)](./package.json)
+[![version](https://img.shields.io/badge/version-1.2.4-6c8f3a)](./package.json)
 [![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](./LICENSE)
-[![tests](https://img.shields.io/badge/tests-409%20passing-2ea043)](#verification)
+[![tests](https://img.shields.io/badge/tests-411%20passing-2ea043)](#verification)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](./tsconfig.json)
 [![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=white)](https://react.dev)
 [![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)](https://vite.dev)
@@ -21,13 +21,13 @@
 
 ---
 
-`mspectr` is a browser-native spectral resynthesis and performance instrument. Feed it a generated sound, an audio file, a microphone, or a browser tab; capture one or two spectral identities; then play, morph, shift, blur, harmonize, and spatialize what those sounds are made of. It stores spectra rather than recordings, runs its analysis and synthesis in an `AudioWorklet`, and stays local-first: no account, no cookies, no telemetry, and no audio uploads.
+`mspectr` is a browser-native spectral freeze & performance instrument — capture a sound's spectral identity, then play, morph, and shift it. Feed it a generated sound, an audio file, a microphone, or a browser tab; capture one or two spectral identities; then play, morph, shift, blur, harmonize, and spatialize what those sounds are made of. It stores and plays spectral **snapshots** — a frozen frame, or an average of eight — not time-varying partial tracks, so what you play is a captured spectral identity rather than an evolving resynthesis of a sound's moving partials. It stores spectra rather than recordings, runs its analysis and synthesis in an `AudioWorklet`, and stays local-first: no account, no cookies, no telemetry, and no audio uploads.
 
 ## Highlights
 
 - **Capture sound as identity** — freeze a single spectral frame or average eight frames into Snapshot A or B. Each snapshot stores magnitude plus optional phase, never the source waveform.
 - **Morph between two timbres** — the central A↔B control interpolates captured spectra continuously; swap slots, copy A to B, clear them, or audition either endpoint.
-- **A full spectral chain** — morph, tilt, blur, gate, pitch resampling, formant shift, additive frequency shift, harmonization, and locked or seeded-animated phase feed stereo space, reverb, and a linked limiter.
+- **A full spectral chain** — morph, tilt, blur, gate, pitch resampling with optional formant-preserving (keytrack) transposition, formant shift, additive frequency shift, harmonization, and locked or seeded-animated phase feed stereo space, reverb, and a linked limiter.
 - **Four performance macros + XY** — Body · Motion · Harmony · Space resolve to concrete engine parameters. Link/Unlink keeps hand-edited values authoritative, and the XY axes are configurable.
 - **Flexible sources** — four deterministic generated sounds, drag-and-drop audio files, microphone/device input, and browser-tab audio where the platform supports it. Microphone and tab sources never monitor through the output, preventing feedback.
 - **Polyphonic performance** — Ableton-style computer keyboard and optional Web MIDI input, scale lock, octave control, velocity, pitch bend, sustain, panic, and up to eight voices with deterministic stealing.
@@ -80,7 +80,7 @@ generated · file · mic · tab ───────▶ AudioEngine ───�
                                            │                                  │
 React UI ─▶ reducer ─▶ macros + XY ─▶ resolved SpectralParams                 ├─ STFT analysis
                                            │                                  ├─ Snapshot A/B capture
-keyboard · Web MIDI ─▶ note routing ───────┘                                  ├─ spectral resynthesis
+keyboard · Web MIDI ─▶ note routing ───────┘                                  ├─ spectral snapshot synthesis
                                                                               └─ space + linked limiter
                                                                                        │
 IndexedDB sessions ◀── validated snapshots + patches ◀── engine events ◀───────────────┘
@@ -96,7 +96,7 @@ See [`docs/architecture.md`](./docs/architecture.md) and [`docs/dsp.md`](./docs/
 ## Verification
 
 ```bash
-npm run check   # lint + typecheck + 409 tests + production build
+npm run check   # lint + typecheck + 411 tests + production build
 ```
 
 Tests are deterministic and live next to the code. They cover FFT/STFT reconstruction, spectral operations, limiter and reverb behavior, engine capture and voice flow, presets and macros, keyboard and MIDI routing, generated/file sources, persistence, sharing codecs, WAV export, visualization, React state, and core UI flows. Live audio devices remain part of the manual browser/device checklist.

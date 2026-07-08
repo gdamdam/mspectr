@@ -1,7 +1,9 @@
 # Architecture
 
-mspectr is a browser-native spectral resynthesis and performance instrument:
-*capture a sound, then play what it is made of.* This document describes how the
+mspectr is a browser-native spectral freeze & performance instrument:
+*capture a sound's spectral identity, then play, morph, and shift it.* It stores
+and plays spectral snapshots — a frozen frame, or an average of eight — not
+time-varying partial tracks. This document describes how the
 system is layered. For the DSP itself see [`dsp.md`](dsp.md); for the local-only
 data model see [`privacy.md`](privacy.md).
 

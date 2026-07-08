@@ -1,7 +1,7 @@
 {
   "name": "mspectr — spectral instrument",
   "short_name": "mspectr",
-  "description": "Capture a sound. Play what it is made of. A browser-native spectral resynthesis and performance instrument. No install, no account, fully local.",
+  "description": "Capture a sound's spectral identity, then play, morph, and shift it. A browser-native spectral freeze & performance instrument. No install, no account, fully local.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
