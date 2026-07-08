@@ -224,7 +224,9 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
       if (e.metaKey || e.ctrlKey || e.altKey) return
       // Space toggles live freeze — a one-touch "capture the moment" gesture.
+      // But let a focused button/select consume Space natively (activate/open).
       if (e.code === 'Space') {
+        if (t && (t.tagName === 'BUTTON' || t.tagName === 'SELECT')) return
         e.preventDefault()
         if (e.repeat) return
         const next = !stateRef.current.patch.params.freeze

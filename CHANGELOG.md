@@ -4,6 +4,12 @@ All notable changes to mspectr are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.3] - 2026-07-08
+
+### Fixed
+- **Keyboard a11y**: pressing Space while a button or select is focused now
+  activates/opens that control natively instead of toggling spectral freeze.
+
 ## [1.2.2] - 2026-07-07
 
 ### Changed
