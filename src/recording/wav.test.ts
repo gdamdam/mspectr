@@ -125,9 +125,9 @@ describe('encodeWavStereo — 16-bit header correctness', () => {
     const buf = encodeWavStereo([L, R], 44100, 16)
     const w = parseWav(buf)
     const view = new DataView(buf)
-    // Interleaved: L then R at dataOffset. setInt16 truncates toward zero, so
-    // 0.5*0x7fff = 16383.5 -> 16383 and -0.5*0x8000 = -16384 exactly.
-    expect(view.getInt16(w.dataOffset, true)).toBe(Math.trunc(0.5 * 0x7fff))
+    // Interleaved: L then R at dataOffset. Encoder rounds (not truncates), so
+    // 0.5*0x7fff = 16383.5 -> 16384 and -0.5*0x8000 = -16384 exactly.
+    expect(view.getInt16(w.dataOffset, true)).toBe(Math.round(0.5 * 0x7fff))
     expect(view.getInt16(w.dataOffset + 2, true)).toBe(-0.5 * 0x8000)
   })
 })
