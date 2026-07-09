@@ -95,7 +95,9 @@ export function encodeWavStereo(
       for (let c = 0; c < numCh; c++) {
         const s = clamp(channels[c][i], -1, 1)
         // Asymmetric scaling: full-scale negative is -0x8000, positive +0x7FFF.
-        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true)
+        // Round rather than let setInt16 truncate toward zero, which minimises
+        // quantisation error.
+        view.setInt16(offset, Math.round(s < 0 ? s * 0x8000 : s * 0x7fff), true)
         offset += 2
       }
     }

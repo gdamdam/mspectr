@@ -11,6 +11,10 @@ const COMB_TUNING = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617]
 const ALLPASS_TUNING = [556, 441, 341, 225]
 const STEREO_SPREAD = 23
 const EARLY_TAPS = [190, 759, 44, 410]
+// Tiny DC injected into the comb feedback so decaying tails never reach
+// subnormal magnitudes — those trigger slow denormal handling (CPU spikes) on
+// quiet tails. Far below the noise floor; steady-state buildup stays ~1e-16.
+const DENORMAL_GUARD = 1e-18
 
 class CombLP {
   private readonly buf: Float32Array
@@ -24,7 +28,7 @@ class CombLP {
   process(input: number): number {
     const out = this.buf[this.idx]
     this.lp = out * (1 - this.damp) + this.lp * this.damp
-    this.buf[this.idx] = input + this.lp * this.feedback
+    this.buf[this.idx] = input + this.lp * this.feedback + DENORMAL_GUARD
     if (++this.idx >= this.buf.length) this.idx = 0
     return out
   }
@@ -88,7 +92,7 @@ export class StereoReverb {
     const width = Number.isFinite(this.width) ? Math.max(0, Math.min(1, this.width)) : 0
     if (amount <= 0 && earlyAmount <= 0) return
     // Feedback/damp from amount: more amount → longer tail.
-    const fb = 0.7 + 0.28 * this.amount
+    const fb = 0.7 + 0.28 * amount
     const damp = 0.15 + 0.4 * (1 - diffusion)
     for (const c of this.combL) {
       c.feedback = fb
