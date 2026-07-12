@@ -32,7 +32,7 @@ import { resolveParams } from '../performance/macros'
 import { getPreset, PRESETS } from '../performance/presets'
 import { createGeneratedSource } from '../sources/generated'
 import { createFileSource } from '../sources/file'
-import { createMicSource, listInputDevices } from '../sources/live'
+import { createMicSource, listInputDevices, MicAcquisitionCancelledError } from '../sources/live'
 import { createTabSource } from '../sources/tab'
 import type { SourceHandle } from '../sources/types'
 import { QwertyKeyboard } from '../instrument/keyboard'
@@ -339,7 +339,16 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
         const ctx = engine.context
         if (!ctx) return
         const token = ++sourceReqRef.current
-        const handle = await createMicSource(ctx, deviceId)
+        let handle: SourceHandle
+        try {
+          // The predicate lets a superseded in-flight acquisition stop its own
+          // just-resolved stream (mic indicator off) instead of orphaning it hot.
+          handle = await createMicSource(ctx, deviceId, () => token !== sourceReqRef.current)
+        } catch (err) {
+          // Supersession is not a failure — don't surface it as a mic error.
+          if (err instanceof MicAcquisitionCancelledError) return
+          throw err
+        }
         if (token !== sourceReqRef.current) return handle.dispose()
         // Mic must NOT monitor — feedback safety.
         swapSource(handle, 'microphone', handle.label || 'Microphone', false)

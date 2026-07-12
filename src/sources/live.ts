@@ -7,13 +7,27 @@
  * raw signal — adapted directly from mscope/src/audio/input/MicrophoneInput.ts.
  *
  * Because acquisition is async and a caller may switch sources before
- * getUserMedia resolves, we guard with a generation counter (the pattern proven in
- * mscope/src/audio/input/BaseInput.ts): if dispose() runs while the request is
- * pending, the resolved-but-orphaned stream is stopped immediately and never
- * connected. dispose() stops all tracks and disconnects the node.
+ * getUserMedia resolves, {@link createMicSource} takes a `cancelled` predicate
+ * (the generation-counter pattern proven in mscope/src/audio/input/BaseInput.ts):
+ * if the request was superseded while pending, the resolved-but-orphaned stream
+ * is stopped immediately and never connected. dispose() stops all tracks and
+ * disconnects the node.
  */
 
 import type { SourceHandle } from './types'
+
+/**
+ * Thrown when an in-flight acquisition was superseded (the caller switched
+ * source / disposed before getUserMedia resolved). The orphaned stream's tracks
+ * are already stopped; callers should swallow this rather than surface it as a
+ * permission/acquisition failure.
+ */
+export class MicAcquisitionCancelledError extends Error {
+  constructor() {
+    super('Microphone acquisition was cancelled by a newer source selection.')
+    this.name = 'MicAcquisitionCancelledError'
+  }
+}
 
 /**
  * Enumerate available audio input devices for a picker. Returns [] when device
@@ -30,12 +44,19 @@ export async function listInputDevices(): Promise<MediaDeviceInfo[]> {
  * Acquire a microphone/line input as a started, connected MediaStreamSource.
  * Pass a `deviceId` (from {@link listInputDevices}) to pin a specific device.
  * Throws on permission denial / acquisition failure.
+ *
+ * Because the handle (and therefore dispose()) only exists once getUserMedia
+ * resolves, a caller cannot tear down an in-flight acquisition itself. Pass
+ * `cancelled` (e.g. a generation-token check) so a superseded request stops the
+ * just-resolved stream's tracks — releasing the device and mic indicator —
+ * instead of leaving it hot and orphaned; it then throws
+ * {@link MicAcquisitionCancelledError}.
  */
-export async function createMicSource(ctx: AudioContext, deviceId?: string): Promise<SourceHandle> {
-  // Acquire first. The handle (and therefore dispose()) only exists once this
-  // resolves, so unlike mscope's stateful BaseInput there is no in-flight handle a
-  // caller could tear down mid-acquisition; the supersession concern reduces to
-  // "dispose() after the node is wired", handled by the `disposed` flag below.
+export async function createMicSource(
+  ctx: AudioContext,
+  deviceId?: string,
+  cancelled?: () => boolean,
+): Promise<SourceHandle> {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: {
       echoCancellation: false,
@@ -45,6 +66,13 @@ export async function createMicSource(ctx: AudioContext, deviceId?: string): Pro
       deviceId: deviceId ? { exact: deviceId } : undefined,
     },
   })
+
+  // Superseded while getUserMedia was pending: release the device immediately
+  // so the mic indicator turns off, and never wire the stale stream.
+  if (cancelled?.()) {
+    stream.getTracks().forEach((t) => t.stop())
+    throw new MicAcquisitionCancelledError()
+  }
 
   const track = stream.getAudioTracks()[0]
   if (!track) {

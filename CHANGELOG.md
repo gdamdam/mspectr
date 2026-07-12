@@ -4,6 +4,15 @@ All notable changes to mspectr are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.7] - 2026-07-13
+
+### Fixed
+- **Mic acquisition cancellation**: switching source (or tearing down) while a
+  microphone request was still pending no longer leaves the resolved stream hot
+  and orphaned (mic indicator stuck on, device locked). A superseded in-flight
+  acquisition now stops the stream's tracks immediately and resolves as a
+  cancellation instead of surfacing a false "microphone denied" error.
+
 ## [1.2.3] - 2026-07-08
 
 ### Fixed
