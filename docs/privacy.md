@@ -24,8 +24,10 @@ never leave your device unless you explicitly choose to share them.
 ## Snapshots and sharing
 
 - A snapshot stores **derived spectral data** (magnitude + optional phase),
-  **never the original waveform**. You cannot reconstruct the source recording
-  from a snapshot.
+  **not the raw waveform**. It is lossy and not designed for full playback of
+  the source, but it is **not** a privacy guarantee: approximate, recognizable
+  reconstruction is possible — especially with stored phase across overlapping
+  STFT frames — so treat a snapshot as potentially revealing of its source.
 - Snapshots derived from a **live input** are flagged. Sharing a live-derived
   snapshot requires **explicit consent** before it can be embedded in a link.
 - **Patch-only links** are the default share format — they contain instrument

@@ -21,6 +21,7 @@ import {
   type SpectralSnapshot,
   LIMITER_CEILING_DB,
   dbToGain,
+  finiteClamp,
 } from './contracts'
 import type {
   AudioEngineApi,
@@ -45,6 +46,13 @@ export class AudioEngine implements AudioEngineApi {
   private starting: Promise<void> | null = null
   private disposed = false
   private pendingQuality: QualityMode = 'normal'
+  /**
+   * Per-preset loudness-normalisation trim (dB) applied on the instrument bus,
+   * kept SEPARATE from the patch's `outputGainDb` (user output trim, applied
+   * inside the worklet) so the two never double-count. Survives worklet
+   * recreation because it is reapplied to instrumentGain in boot().
+   */
+  private calibrationDb = 0
 
   private readonly onVisibility = () => {
     if (typeof document !== 'undefined' && document.visibilityState === 'visible') void this.tryResume()
@@ -96,6 +104,7 @@ export class AudioEngine implements AudioEngineApi {
       finalLimiter.attack.value = 0.003
       finalLimiter.release.value = 0.12
 
+      instrumentGain.gain.value = dbToGain(this.calibrationDb)
       node.connect(instrumentGain).connect(finalLimiter)
       monitorGain.connect(finalLimiter)
       finalLimiter.connect(ctx.destination)
@@ -257,6 +266,15 @@ export class AudioEngine implements AudioEngineApi {
     if (!this.monitorGain || !this.ctx) return
     const target = on ? dbToGain(-3) : 0
     this.monitorGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.02)
+  }
+
+  setCalibration(db: number): void {
+    // Preset loudness trim on the instrument bus. Clamped to the same range as
+    // the patch's output trim; smoothed so a preset change never clicks.
+    this.calibrationDb = finiteClamp(db, -24, 24, 0)
+    if (this.instrumentGain && this.ctx) {
+      this.instrumentGain.gain.setTargetAtTime(dbToGain(this.calibrationDb), this.ctx.currentTime, 0.02)
+    }
   }
 
   audition(slot: SnapshotSlot | null): void {

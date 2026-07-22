@@ -55,7 +55,8 @@ authoritative when a macro is unlinked. Resolution happens on the main thread
 ### Snapshots A/B
 
 A captured spectrum is stored as a `SpectralSnapshot` — derived magnitude (+
-optional phase), never the original waveform. Two slots, **A** and **B**, feed
+optional phase): derived spectral data, not the raw waveform (lossy, though
+approximate reconstruction of the source remains possible). Two slots, **A** and **B**, feed
 the morph stage. Live-derived snapshots carry a flag so sharing can require
 explicit consent.
 

@@ -12,6 +12,7 @@
 import {
   INSTRUMENT_SCHEMA_VERSION,
   sanitizePatch,
+  sanitizePersistedSource,
   type SavedInstrument,
 } from '../audio/contracts'
 import { INSTRUMENTS_STORE, SNAPSHOTS_STORE, withStore, withTransaction } from './db'
@@ -60,6 +61,7 @@ export function deserializeInstrument(raw: unknown, id: string): SavedInstrument
     snapshotRefA: coerceRef(r.snapshotRefA),
     snapshotRefB: coerceRef(r.snapshotRefB),
     sourceLabel: typeof r.sourceLabel === 'string' ? r.sourceLabel : '',
+    source: sanitizePersistedSource(r.source) ?? undefined,
   }
 }
 
@@ -75,6 +77,7 @@ function serializeInstrument(inst: SavedInstrument): SavedInstrument {
     snapshotRefA: coerceRef(inst.snapshotRefA),
     snapshotRefB: coerceRef(inst.snapshotRefB),
     sourceLabel: typeof inst.sourceLabel === 'string' ? inst.sourceLabel : '',
+    source: sanitizePersistedSource(inst.source) ?? undefined,
   }
 }
 

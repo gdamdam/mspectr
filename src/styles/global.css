@@ -878,6 +878,16 @@ button.select[aria-expanded='true'] .select-menu__chevron {
   margin: 0 0 6px;
   font-size: 0.85rem;
 }
+.source__reselect {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  color: var(--text);
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
 .source__dot {
   width: 9px;
   height: 9px;

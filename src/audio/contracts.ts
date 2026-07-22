@@ -39,8 +39,6 @@ export const MAX_POLYPHONY = 8
 export const MIN_POLYPHONY = 1
 export const MAX_HARMONY_VOICES = 4
 export const LIMITER_CEILING_DB = -1
-/** Seconds of rolling live input retained for freeze/capture. */
-export const LIVE_BUFFER_SECONDS = 4
 /** Largest FFT we will ever allocate — bounds memory for malformed snapshots. */
 export const MAX_FFT_SIZE = 8192
 /** Max frames in an evolving snapshot — bounds memory, transfer, and link size. */
@@ -494,6 +492,55 @@ export interface SavedInstrument {
   snapshotRefA: string | null
   snapshotRefB: string | null
   sourceLabel: string
+  /**
+   * The audio source active when saved. Optional for backward compatibility:
+   * legacy records without it are migrated by inferring a generated source from
+   * the patch's preset on load. Only generated sources are actually restorable;
+   * mic/tab/file sources can never be reacquired after a reload (browser
+   * security), so on restore they surface a "reselect" prompt instead.
+   */
+  source?: PersistedSource
+}
+
+// ---------------------------------------------------------------------------
+// Persisted audio-source identity (for honest session recall)
+// ---------------------------------------------------------------------------
+
+export type SourceKind = 'generated' | 'file' | 'microphone' | 'tab'
+export const SOURCE_KINDS: readonly SourceKind[] = ['generated', 'file', 'microphone', 'tab']
+
+export interface PersistedSource {
+  kind: SourceKind
+  label: string
+  /** The generated-source id when kind==='generated'; null otherwise. */
+  generatedId: GeneratedSourceId | null
+}
+
+/** Max characters retained for a persisted source label. */
+const MAX_SOURCE_LABEL = 120
+
+/**
+ * Validate a persisted source descriptor from storage/sharing. Returns null for
+ * anything that isn't a usable object so callers can fall back to inference.
+ * A 'generated' kind keeps its id only if it is a real generated source; other
+ * kinds always carry a null id (they are not restorable by identity).
+ */
+export function sanitizePersistedSource(raw: unknown): PersistedSource | null {
+  if (!raw || typeof raw !== 'object') return null
+  const s = raw as Partial<PersistedSource>
+  if (!SOURCE_KINDS.includes(s.kind as SourceKind)) return null
+  const kind = s.kind as SourceKind
+  const label = typeof s.label === 'string' ? s.label.slice(0, MAX_SOURCE_LABEL) : ''
+  const generatedId =
+    kind === 'generated' && GENERATED_SOURCE_IDS.includes(s.generatedId as GeneratedSourceId)
+      ? (s.generatedId as GeneratedSourceId)
+      : null
+  return { kind, label, generatedId }
+}
+
+/** True when a persisted source can be reacquired exactly on reload. */
+export function isSourceRestorable(source: PersistedSource | null | undefined): boolean {
+  return !!source && source.kind === 'generated' && source.generatedId !== null
 }
 
 // ---------------------------------------------------------------------------
@@ -664,6 +711,51 @@ export function sanitizePatch(raw: unknown): SpectralPatch {
       x: finiteClamp((p.xy as { x?: number } | undefined)?.x, 0, 1, DEFAULT_PATCH.xy.x),
       y: finiteClamp((p.xy as { y?: number } | undefined)?.y, 0, 1, DEFAULT_PATCH.xy.y),
     },
+  }
+}
+
+/**
+ * Validate a snapshot arriving over postMessage or from persistence/sharing
+ * before the engine indexes, resamples, or copies it. Enforces the hard
+ * FFT/frame bounds, derives the usable frame count from the ACTUAL magnitude
+ * length (so indexing can never run past the end), drops phase when it doesn't
+ * match, and coerces non-finite samples to 0. Returns null for payloads too
+ * malformed to use. This is the single boundary — bounds live here, not in the
+ * engine, so they cannot drift out of sync.
+ */
+export function sanitizeSnapshot(raw: unknown): SpectralSnapshot | null {
+  if (!raw || typeof raw !== 'object') return null
+  const s = raw as Partial<SpectralSnapshot>
+  const mag = s.magnitude
+  if (!(mag instanceof Float32Array) || mag.length === 0) return null
+  const fftSize = finiteInt(s.fftSize, MIN_FFT_SIZE, MAX_FFT_SIZE, MIN_FFT_SIZE)
+  const binCount = (fftSize >> 1) + 1
+  const maxFrames = Math.min(MAX_SNAPSHOT_FRAMES, Math.floor(mag.length / binCount))
+  if (maxFrames < 1) return null
+  const declared = finiteInt(s.frameCount, 1, MAX_SNAPSHOT_FRAMES, 1)
+  const frameCount = Math.min(declared, maxFrames)
+  const len = frameCount * binCount
+  const magnitude = new Float32Array(len)
+  for (let i = 0; i < len; i++) magnitude[i] = Number.isFinite(mag[i]) ? mag[i] : 0
+  let phase: Float32Array | null = null
+  if (s.phase instanceof Float32Array && s.phase.length >= len) {
+    phase = new Float32Array(len)
+    for (let i = 0; i < len; i++) phase[i] = Number.isFinite(s.phase[i]) ? s.phase[i] : 0
+  }
+  const analysisSampleRate = finiteClamp(s.analysisSampleRate, 8000, 192_000, 48_000)
+  return {
+    schemaVersion: SNAPSHOT_SCHEMA_VERSION,
+    fftSize,
+    binCount,
+    analysisSampleRate,
+    baseFrequency: finiteClamp(s.baseFrequency, 0, analysisSampleRate / 2, 0),
+    frameCount,
+    frameHop: finiteInt(s.frameHop, 1, MAX_FFT_SIZE, fftSize >> 2),
+    magnitude,
+    phase,
+    sourceLabel: typeof s.sourceLabel === 'string' ? s.sourceLabel.slice(0, 200) : '',
+    capturedAt: finiteClamp(s.capturedAt, 0, Number.MAX_SAFE_INTEGER, 0),
+    isLiveDerived: Boolean(s.isLiveDerived),
   }
 }
 

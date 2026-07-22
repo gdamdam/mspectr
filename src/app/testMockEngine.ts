@@ -49,6 +49,7 @@ export function createMockEngine(): MockEngine {
     setSeed: rec('setSeed'),
     setTempo: rec('setTempo'),
     setPolyphony: rec('setPolyphony'),
+    setCalibration: rec('setCalibration'),
     capture: rec('capture') as MockEngine['capture'],
     loadSnapshot: rec('loadSnapshot'),
     clearSnapshot: rec('clearSnapshot'),

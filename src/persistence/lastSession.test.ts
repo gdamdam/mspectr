@@ -69,5 +69,27 @@ describe('last-session autosave', () => {
     expect(session).toBeDefined()
     expect(session!.savedAt).toBeNull()
     expect(session!.patch.params.morph).toBeCloseTo(DEFAULT_PATCH.params.morph)
+    // Legacy saves carry no source identity.
+    expect(session!.source).toBeNull()
+  })
+
+  it('round-trips a persisted generated source', () => {
+    saveLastPatch(DEFAULT_PATCH, { kind: 'generated', label: 'Glass', generatedId: 'glass-harmonica' })
+    const session = loadLastSession()
+    expect(session!.source).toEqual({ kind: 'generated', label: 'Glass', generatedId: 'glass-harmonica' })
+  })
+
+  it('round-trips a non-restorable source with a null id', () => {
+    saveLastPatch(DEFAULT_PATCH, { kind: 'microphone', label: 'Studio mic', generatedId: null })
+    const session = loadLastSession()
+    expect(session!.source).toEqual({ kind: 'microphone', label: 'Studio mic', generatedId: null })
+  })
+
+  it('yields a null source when saved without one and sanitizes a malformed source', () => {
+    saveLastPatch(DEFAULT_PATCH)
+    expect(loadLastSession()!.source).toBeNull()
+    // A wrapped record with a bad source object degrades to null, not a throw.
+    localStorage.setItem(LAST_PATCH_KEY, JSON.stringify({ patch: DEFAULT_PATCH, savedAt: 1, source: { kind: 'bogus' } }))
+    expect(loadLastSession()!.source).toBeNull()
   })
 })

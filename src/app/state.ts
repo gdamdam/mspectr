@@ -24,6 +24,8 @@ import {
   type SpectralParams,
   type SpectralPatch,
   type EngineTelemetry,
+  type GeneratedSourceId,
+  type PersistedSource,
 } from '../audio/contracts'
 import type { Preset } from '../audio/contracts'
 import { getPreset, PRESETS } from '../performance/presets'
@@ -76,6 +78,15 @@ export interface UiState {
   sourceKind: AudioInputKind
   /** Label of the active source (preset name, file name, mic name, …). */
   sourceLabel: string
+  /** The active generated-source id, or null when the input isn't generated. */
+  generatedId: GeneratedSourceId | null
+  /**
+   * A source a restored session referenced but that can't be reacquired
+   * (mic/tab/file — browser security). Non-null drives a "reselect an input"
+   * prompt; the actual audio graph keeps a playable generated source meanwhile.
+   * Cleared as soon as the user picks any input.
+   */
+  sourceReselect: PersistedSource | null
   /** Which slot, if any, is currently being auditioned. */
   auditioning: SnapshotSlot | null
   snapshotA: SlotMeta | null
@@ -125,7 +136,8 @@ export type Action =
   | { type: 'set-polyphony'; value: number }
   | { type: 'set-octave'; value: number }
   | { type: 'audio-started' }
-  | { type: 'set-source'; kind: AudioInputKind; label: string }
+  | { type: 'set-source'; kind: AudioInputKind; label: string; generatedId?: GeneratedSourceId | null }
+  | { type: 'source-unavailable'; source: PersistedSource }
   | { type: 'set-auditioning'; slot: SnapshotSlot | null }
   | { type: 'snapshot-captured'; slot: SnapshotSlot; label: string; capturedAt: number; isLiveDerived: boolean; character?: string }
   | { type: 'snapshot-loaded'; slot: SnapshotSlot; meta: SlotMeta }
@@ -164,6 +176,8 @@ function initialUi(prefs: Preferences): UiState {
     audioStarted: false,
     sourceKind: 'generated',
     sourceLabel: DEFAULT_PRESET.name,
+    generatedId: DEFAULT_PRESET.source,
+    sourceReselect: null,
     auditioning: null,
     snapshotA: null,
     snapshotB: null,
@@ -212,6 +226,8 @@ export function reducer(state: AppState, action: Action): AppState {
           ...state.ui,
           sourceKind: 'generated',
           sourceLabel: preset.name,
+          generatedId: preset.source,
+          sourceReselect: null,
           auditioning: null,
         },
       }
@@ -292,8 +308,20 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'set-source':
       return {
         ...state,
-        ui: { ...state.ui, sourceKind: action.kind, sourceLabel: action.label },
+        ui: {
+          ...state.ui,
+          sourceKind: action.kind,
+          sourceLabel: action.label,
+          generatedId: action.kind === 'generated' ? (action.generatedId ?? null) : null,
+          // Any real source selection resolves an outstanding reselect prompt.
+          sourceReselect: null,
+        },
       }
+
+    case 'source-unavailable':
+      // A restored session's source can't be reacquired. Surface the prompt but
+      // leave the actual (playable) source untouched — never claim it's active.
+      return { ...state, ui: { ...state.ui, sourceReselect: action.source } }
 
     case 'set-auditioning':
       return { ...state, ui: { ...state.ui, auditioning: action.slot } }

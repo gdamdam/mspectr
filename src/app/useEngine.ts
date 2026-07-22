@@ -23,6 +23,7 @@ import {
   DEFAULT_XY_MAPPING,
   type CaptureMode,
   type GeneratedSourceId,
+  type PersistedSource,
   type SnapshotSlot,
   type SpectralSnapshot,
   type XYMapping,
@@ -52,7 +53,14 @@ export interface EngineControls {
   setFileSource(file: File): Promise<void>
   setMicSource(deviceId?: string): Promise<void>
   setTabSource(): Promise<void>
+  /**
+   * Restore a persisted source on session recall. Generated sources are
+   * reacquired by id so the audio graph matches the label; mic/tab/file cannot
+   * be reacquired (browser security) and instead raise a reselect prompt.
+   */
+  restoreSource(source: PersistedSource | null): void
   listMicDevices(): Promise<MediaDeviceInfo[]>
+  setCalibration(db: number): void
   capture(slot: SnapshotSlot, mode: CaptureMode): void
   loadSnapshotFromSerialized(slot: SnapshotSlot, snapshot: SpectralSnapshot, label: string): void
   clearSnapshot(slot: SnapshotSlot): void
@@ -255,6 +263,7 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
       label: string,
       monitorSafe: boolean,
       preserveFreeze = false,
+      generatedId: GeneratedSourceId | null = null,
     ) => {
       sourceRef.current?.dispose()
       sourceRef.current = handle
@@ -269,7 +278,7 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
         engine.freezeLive(false)
         dispatch({ type: 'edit-param', key: 'freeze', value: false })
       }
-      dispatch({ type: 'set-source', kind, label })
+      dispatch({ type: 'set-source', kind, label, generatedId })
     },
     [engine, dispatch, stateRef],
   )
@@ -311,6 +320,8 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
         engine.setQuality(patch.quality)
         engine.setSeed(patch.seed)
         engine.setPolyphony(patch.polyphony)
+        // Apply the active preset's loudness calibration (0 dB when no preset).
+        engine.setCalibration(presetSourceId ? (getPreset(presetSourceId)?.calibrationDb ?? 0) : 0)
         dispatch({ type: 'audio-started' })
         dispatch({ type: 'set-source', kind: 'generated', label: ui.sourceLabel })
       },
@@ -322,7 +333,22 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
         // in flight resolves stale and won't overwrite this preset.
         sourceReqRef.current += 1
         const handle = createGeneratedSource(ctx, generatedId)
-        swapSource(handle, 'generated', label, true, preserveFreeze)
+        swapSource(handle, 'generated', label, true, preserveFreeze, generatedId)
+      },
+
+      restoreSource(source) {
+        if (!source) return
+        if (source.kind === 'generated' && source.generatedId) {
+          const ctx = engine.context
+          if (!ctx) return
+          sourceReqRef.current += 1
+          const handle = createGeneratedSource(ctx, source.generatedId)
+          swapSource(handle, 'generated', source.label, true, false, source.generatedId)
+        } else {
+          // Non-restorable (mic/tab/file): prompt for reselection; the generated
+          // default started with the engine keeps the instrument playable.
+          dispatch({ type: 'source-unavailable', source })
+        }
       },
 
       async setFileSource(file) {
@@ -364,6 +390,10 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
       },
 
       listMicDevices: () => listInputDevices(),
+
+      setCalibration(db) {
+        engine.setCalibration(db)
+      },
 
       capture(slot, mode) {
         const { sourceKind, sourceLabel } = stateRef.current.ui
@@ -438,9 +468,24 @@ export function useEngine({ stateRef, dispatch, engineFactory }: UseEngineArgs):
         const ctx = engine.context
         const out = engine.getOutputNode()
         if (!ctx || !out) return false
-        const rec = new WavRecorder(ctx, out, { bitDepth: 24, maxSeconds: 600 })
+        const maxSeconds = 600
+        const rec = new WavRecorder(ctx, out, { bitDepth: 24, maxSeconds })
         recorderRef.current = rec
         rec.onProgress((seconds) => dispatch({ type: 'recording-progress', seconds }))
+        // Duration-cap auto-stop: the recorder finalizes on its own thread; here
+        // we settle the UI exactly once — the WavRecorder guarantees onComplete
+        // fires only on the auto path, never for a manual stop() or cancel().
+        rec.onComplete((blob) => {
+          if (recorderRef.current !== rec) return
+          rec.dispose()
+          recorderRef.current = null
+          dispatch({ type: 'set-recording', recording: false })
+          dispatch({
+            type: 'set-notice',
+            notice: `Recording stopped at the ${Math.round(maxSeconds / 60)}-minute limit — file saved.`,
+          })
+          downloadBlob(blob, recordingFilename(stateRef.current.ui.sourceLabel, new Date()))
+        })
         await rec.start()
         dispatch({ type: 'set-recording', recording: true, seconds: 0 })
         return true

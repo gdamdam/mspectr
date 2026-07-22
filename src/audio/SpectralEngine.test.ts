@@ -149,9 +149,31 @@ describe('SpectralEngine', () => {
     e.setQuality('high')
     expect(e.snapshotFilled('A')).toBe(true)
     expect(e.snapshotFilled('B')).toBe(true)
-    // A copy after rebuild exposes the preserved metadata through capture state.
-    e.copySnapshot('A', 'B')
     expect(oldBins).not.toBe(0)
+    // Provenance survives the quality rebuild for each slot.
+    expect(e.peekSnapshot('A')).toMatchObject({ sourceLabel: 'Mic', capturedAt: 1234, isLiveDerived: true })
+    expect(e.peekSnapshot('B')).toMatchObject({ sourceLabel: 'File', capturedAt: 5678, isLiveDerived: false })
+    // A copy carries ALL provenance — capturedAt included (regression: it was dropped).
+    e.copySnapshot('A', 'B')
+    expect(e.peekSnapshot('B')).toMatchObject({
+      sourceLabel: 'Mic',
+      capturedAt: 1234,
+      isLiveDerived: true,
+    })
+  })
+
+  it('reports the true live-frame window, not a fabricated constant', () => {
+    const e = new SpectralEngine(SR, 'normal')
+    e.setParams({ ...DEFAULT_PARAMS })
+    // No live frame acquired yet → nothing retained.
+    expect(e.liveBufferSeconds()).toBe(0)
+    run(e, 40, 220)
+    // After analysis the retained window is exactly one FFT frame (fftSize/SR),
+    // ~43 ms at 2048/48000 — never the old hardcoded 4 s.
+    const secs = e.liveBufferSeconds()
+    expect(secs).toBeGreaterThan(0)
+    expect(secs).toBeLessThan(0.2)
+    expect(secs).toBeCloseTo(2048 / SR, 5)
   })
 
   it('captures the displayed frozen spectrum immediately with provenance', () => {

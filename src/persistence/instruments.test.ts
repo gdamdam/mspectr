@@ -210,6 +210,23 @@ describe('instruments CRUD (in-memory IDB)', () => {
     expect(await loadInstrument('nope')).toBeNull()
   })
 
+  it('round-trips the persisted source and migrates legacy records', async () => {
+    await saveInstrument(
+      makeInstrument('gen', { source: { kind: 'generated', label: 'Bell', generatedId: 'fm-bell' } }),
+    )
+    expect((await loadInstrument('gen'))?.source).toEqual({
+      kind: 'generated',
+      label: 'Bell',
+      generatedId: 'fm-bell',
+    })
+    // A non-restorable source keeps its kind but never a generated id.
+    await saveInstrument(makeInstrument('mic', { source: { kind: 'microphone', label: 'Mic', generatedId: null } }))
+    expect((await loadInstrument('mic'))?.source).toEqual({ kind: 'microphone', label: 'Mic', generatedId: null })
+    // Legacy record without a source loads cleanly with an undefined source.
+    await saveInstrument(makeInstrument('legacy'))
+    expect((await loadInstrument('legacy'))?.source).toBeUndefined()
+  })
+
   it('lists all saved instruments with correct ids', async () => {
     await saveInstrument(makeInstrument('a'))
     await saveInstrument(makeInstrument('b'))

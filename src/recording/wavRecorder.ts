@@ -47,6 +47,8 @@ export interface RecorderOptions {
 }
 
 type ProgressCb = (seconds: number, approxBytes: number) => void
+/** Fired exactly once when the recorder auto-stops at maxSeconds and finalizes. */
+type CompleteCb = (blob: Blob) => void
 
 /** addModule() registrations are scoped to an AudioContext, never global. */
 const workletModuleLoads = new WeakMap<AudioContext, Promise<boolean>>()
@@ -76,6 +78,7 @@ export class WavRecorder {
   private stopPromise: Promise<Blob> | null = null
   private maxFrames: number
   private progressCbs = new Set<ProgressCb>()
+  private completeCbs = new Set<CompleteCb>()
   private pagehideHandler: (() => void) | null = null
 
   constructor(ctx: AudioContext, tap: AudioNode, opts: RecorderOptions = {}) {
@@ -108,6 +111,20 @@ export class WavRecorder {
     this.progressCbs.add(cb)
     return () => {
       this.progressCbs.delete(cb)
+    }
+  }
+
+  /**
+   * Register a listener invoked once when recording auto-stops at the duration
+   * cap and the WAV has been finalized. This is the path a manual stop() does
+   * NOT take — a user-initiated stop resolves its own Blob via stop(). The
+   * listener lets the UI finalize (download, clear "recording", show a notice)
+   * without polling. Not called on cancel() or manual stop().
+   */
+  onComplete(cb: CompleteCb): () => void {
+    this.completeCbs.add(cb)
+    return () => {
+      this.completeCbs.delete(cb)
     }
   }
 
@@ -176,6 +193,7 @@ export class WavRecorder {
   dispose(): void {
     this.cancel()
     this.progressCbs.clear()
+    this.completeCbs.clear()
     if (this.pagehideHandler && typeof window !== 'undefined') {
       window.removeEventListener('pagehide', this.pagehideHandler)
       this.pagehideHandler = null
@@ -328,9 +346,17 @@ export class WavRecorder {
   }
 
   /**
-   * Auto-stop when the cap is hit: detach capture, mark inactive, and notify a
-   * final progress tick so the UI can surface the limit. If a stop() promise is
-   * pending its message handler will still resolve from the buffered data.
+   * Auto-stop when the cap is hit: detach capture, mark inactive, and finalize
+   * exactly once.
+   *
+   * Two cases:
+   *  - A manual stop() is already pending (`stopping`): it owns the resulting
+   *    Blob and will resolve from the buffered data, so we only nudge the
+   *    worklet and emit a final progress tick — no teardown/finalize/notify here.
+   *  - No stop() pending (the common auto path): detach, encode the WAV, and
+   *    invoke onComplete listeners so the UI can download and clear its state.
+   *    `active` is already false, so a re-entrant autoStop() is a no-op — the
+   *    completion fires once.
    */
   private autoStop(): void {
     if (!this.active) return
@@ -342,9 +368,20 @@ export class WavRecorder {
         /* port gone */
       }
     }
-    // If no stop() is pending, detach immediately so nothing keeps running.
-    if (!this.stopping) this.teardownNodes()
+    if (this.stopping) {
+      this.emitProgress()
+      return
+    }
+    this.teardownNodes()
     this.emitProgress()
+    // Encode WITHOUT resetting the buffers so elapsedSeconds still reports the
+    // captured duration and a later stop() can re-encode the same audio; the
+    // buffers are freed when the owner disposes/cancels the recorder. Only
+    // encode when someone is listening — a manual-stop UI never registers here.
+    if (this.completeCbs.size > 0) {
+      const blob = this.encodeToBlob()
+      for (const cb of this.completeCbs) cb(blob)
+    }
   }
 
   private emitProgress(): void {
@@ -355,11 +392,17 @@ export class WavRecorder {
     for (const cb of this.progressCbs) cb(seconds, approxBytes)
   }
 
-  private finishToBlob(): Blob {
+  /** Encode the captured audio to a WAV Blob without disturbing the buffers. */
+  private encodeToBlob(): Blob {
     const channels = this.assembleChannels()
     const ab = encodeWavStereo(channels, this.sampleRate, this.bitDepth, this.meta)
-    this.resetBuffers()
     return new Blob([ab], { type: 'audio/wav' })
+  }
+
+  private finishToBlob(): Blob {
+    const blob = this.encodeToBlob()
+    this.resetBuffers()
+    return blob
   }
 
   private assembleChannels(): Float32Array[] {

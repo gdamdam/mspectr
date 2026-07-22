@@ -9,7 +9,12 @@
  * and any restored value is run through sanitizePatch before it can reach the UI
  * or the DSP loop.
  */
-import { sanitizePatch, type SpectralPatch } from '../audio/contracts'
+import {
+  sanitizePatch,
+  sanitizePersistedSource,
+  type PersistedSource,
+  type SpectralPatch,
+} from '../audio/contracts'
 
 export const LAST_PATCH_KEY = 'mspectr.lastPatch'
 
@@ -18,31 +23,34 @@ export interface LastSession {
   patch: SpectralPatch
   /** ms since epoch, or null for legacy saves that predate the timestamp. */
   savedAt: number | null
+  /** The active source when saved, or null for legacy/unknown saves. */
+  source: PersistedSource | null
 }
 
-/** Persist the current patch as the "last session". Never throws. */
-export function saveLastPatch(patch: SpectralPatch): void {
+/** Persist the current patch (and its source) as the "last session". Never throws. */
+export function saveLastPatch(patch: SpectralPatch, source?: PersistedSource | null): void {
   try {
     // Wrap with a savedAt stamp so the launch screen can show when the last
     // session was left off. loadLastSession still reads the legacy bare-patch
     // shape written by earlier versions.
-    localStorage.setItem(LAST_PATCH_KEY, JSON.stringify({ patch, savedAt: Date.now() }))
+    localStorage.setItem(LAST_PATCH_KEY, JSON.stringify({ patch, savedAt: Date.now(), source: source ?? null }))
   } catch {
     /* storage unavailable (private mode, quota) — autosave is best-effort. */
   }
 }
 
-/** Restore the last session (patch + timestamp), or undefined when absent/unreadable. */
+/** Restore the last session (patch + timestamp + source), or undefined when absent/unreadable. */
 export function loadLastSession(): LastSession | undefined {
   try {
     const raw = localStorage.getItem(LAST_PATCH_KEY)
     if (!raw) return undefined
     const parsed = JSON.parse(raw)
-    // New shape: { patch, savedAt }. Legacy shape: the bare patch object.
+    // New shape: { patch, savedAt, source? }. Legacy shape: the bare patch object.
     const isWrapped = parsed && typeof parsed === 'object' && 'patch' in parsed
     const source = isWrapped ? parsed.patch : parsed
     const savedAt = isWrapped && typeof parsed.savedAt === 'number' ? parsed.savedAt : null
-    return { patch: sanitizePatch(source), savedAt }
+    const persistedSource = isWrapped ? sanitizePersistedSource(parsed.source) : null
+    return { patch: sanitizePatch(source), savedAt, source: persistedSource }
   } catch {
     return undefined
   }

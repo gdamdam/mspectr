@@ -4,6 +4,45 @@ All notable changes to mspectr are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-07-22
+
+### Added
+- **Honest session source recall**: saved sessions and the last-session autosave
+  now persist the active source's identity. Generated sources are reacquired by
+  id on load so the audio graph matches the label; microphone/tab/file sources
+  (which browsers cannot reacquire after a reload) surface a clear "reselect an
+  input" prompt instead of silently showing a stale label, while their captured
+  snapshots stay playable. Legacy records are migrated by inferring the generated
+  source behind the patch's preset.
+- **Recorder auto-completion**: hitting the recording duration cap now finalizes
+  exactly once, clears the recording state, downloads the WAV, and shows a
+  limit-reached notice — no more UI stuck in "recording" with a buffered file.
+
+### Fixed
+- **Real overload detection**: the spectral worklet now reports measured render
+  load (render time vs the real-time deadline, accumulated per telemetry window)
+  with EMA smoothing and hysteresis, emitting overload only on transitions —
+  replacing the `activeVoices / 8` placeholder that never reflected real cost.
+- **Worklet input validation**: parameters are re-sanitized at the worklet
+  boundary and snapshots are validated (FFT/bin/frame bounds, array lengths,
+  non-finite coercion) before the engine indexes or resamples them; malformed
+  messages are ignored.
+- **Preset fields applied**: selecting a preset now applies its `captureStrategy`
+  (seeding the capture mode) and its `calibrationDb` loudness trim on a dedicated
+  instrument-bus gain, kept separate from the patch's output trim.
+- **Snapshot copy provenance**: copying a snapshot A→B now preserves `capturedAt`.
+- **Recorder worklet traffic**: audio chunks are batched (~2048-frame windows)
+  instead of one message + allocation per render quantum.
+
+### Changed
+- **Live-buffer telemetry**: `liveBufferSeconds` now reports the true retained
+  analysis window (one FFT frame) instead of a fabricated 4-second constant.
+- **Privacy wording**: snapshot documentation no longer claims the source "cannot
+  be reconstructed" — it describes snapshots as lossy derived spectral data from
+  which approximate, potentially recognizable reconstruction is possible.
+- **Docs**: corrected the generated-source (14), preset (23), and test counts;
+  a test now guards the source/preset counts against future drift.
+
 ## [1.2.7] - 2026-07-13
 
 ### Fixed

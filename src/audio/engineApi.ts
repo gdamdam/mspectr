@@ -43,6 +43,11 @@ export interface AudioEngineApi {
   setTempo(bpm: number): void
   /** Bounded voice count (1..MAX_POLYPHONY, further capped by quality mode). */
   setPolyphony(value: number): void
+  /**
+   * Per-preset loudness-normalisation trim (dB) on the instrument bus, distinct
+   * from the patch's `outputGainDb`. Applied so presets sit at a consistent level.
+   */
+  setCalibration(db: number): void
 
   capture(
     slot: SnapshotSlot,

@@ -4,9 +4,9 @@
 
 **Capture a sound. Play what it is made of.**
 
-[![version](https://img.shields.io/badge/version-1.2.4-6c8f3a)](./package.json)
+[![version](https://img.shields.io/badge/version-1.3.0-6c8f3a)](./package.json)
 [![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](./LICENSE)
-[![tests](https://img.shields.io/badge/tests-411%20passing-2ea043)](#verification)
+[![tests](https://img.shields.io/badge/tests-452%20passing-2ea043)](#verification)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](./tsconfig.json)
 [![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=white)](https://react.dev)
 [![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)](https://vite.dev)
@@ -25,14 +25,14 @@
 
 ## Highlights
 
-- **Capture sound as identity** — freeze a single spectral frame or average eight frames into Snapshot A or B. Each snapshot stores magnitude plus optional phase, never the source waveform.
+- **Capture sound as identity** — freeze a single spectral frame or average eight frames into Snapshot A or B. Each snapshot stores magnitude plus optional phase — derived spectral data, not the raw waveform (though it is lossy and only approximately reconstructible).
 - **Morph between two timbres** — the central A↔B control interpolates captured spectra continuously; swap slots, copy A to B, clear them, or audition either endpoint.
 - **A full spectral chain** — morph, tilt, blur, gate, pitch resampling with optional formant-preserving (keytrack) transposition, formant shift, additive frequency shift, harmonization, and locked or seeded-animated phase feed stereo space, reverb, and a linked limiter.
 - **Four performance macros + XY** — Body · Motion · Harmony · Space resolve to concrete engine parameters. Link/Unlink keeps hand-edited values authoritative, and the XY axes are configurable.
-- **Flexible sources** — four deterministic generated sounds, drag-and-drop audio files, microphone/device input, and browser-tab audio where the platform supports it. Microphone and tab sources never monitor through the output, preventing feedback.
+- **Flexible sources** — fourteen (14) deterministic generated sounds, drag-and-drop audio files, microphone/device input, and browser-tab audio where the platform supports it. Microphone and tab sources never monitor through the output, preventing feedback.
 - **Polyphonic performance** — Ableton-style computer keyboard and optional Web MIDI input, scale lock, octave control, velocity, pitch bend, sustain, panic, and up to eight voices with deterministic stealing.
 - **Three quality modes** — Eco, Normal, and High trade responsiveness for frequency detail using 1024-, 2048-, and 4096-point FFTs at 75% overlap.
-- **Ten authored presets** — frozen, metallic, textural, and organ voices provide useful starting points without hiding the underlying parameters.
+- **23 authored presets** — frozen, metallic, textural, and organ voices provide useful starting points without hiding the underlying parameters.
 - **Save, share, and record** — versioned IndexedDB sessions, validated JSON import/export, backend-free patch links, opt-in embedded-snapshot links with size and consent gates, and master-output WAV recording.
 - **Installable PWA** — network-first navigation and precached hashed assets make the complete instrument available offline after one successful visit.
 
@@ -96,7 +96,7 @@ See [`docs/architecture.md`](./docs/architecture.md) and [`docs/dsp.md`](./docs/
 ## Verification
 
 ```bash
-npm run check   # lint + typecheck + 411 tests + production build
+npm run check   # lint + typecheck + 452 tests + production build
 ```
 
 Tests are deterministic and live next to the code. They cover FFT/STFT reconstruction, spectral operations, limiter and reverb behavior, engine capture and voice flow, presets and macros, keyboard and MIDI routing, generated/file sources, persistence, sharing codecs, WAV export, visualization, React state, and core UI flows. Live audio devices remain part of the manual browser/device checklist.

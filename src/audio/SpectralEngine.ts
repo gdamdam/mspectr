@@ -29,7 +29,6 @@ import {
   type SpectralSnapshot,
   DEFAULT_PARAMS,
   INTERVAL_SETS,
-  LIVE_BUFFER_SECONDS,
   MIN_POLYPHONY,
   SNAPSHOT_SCHEMA_VERSION,
   MAX_SNAPSHOT_FRAMES,
@@ -478,6 +477,9 @@ export class SpectralEngine {
     dst.filled = src.filled
     dst.baseFrequency = src.baseFrequency
     dst.sourceLabel = src.sourceLabel
+    // capturedAt is provenance and must survive a copy — omitting it left the
+    // destination with a stale timestamp that would then be serialized/exported.
+    dst.capturedAt = src.capturedAt
     dst.isLiveDerived = src.isLiveDerived
   }
 
@@ -606,6 +608,16 @@ export class SpectralEngine {
     if (this.onCaptured) {
       this.onCaptured(which, this.snapshotOf(slot))
     }
+  }
+
+  /**
+   * A serializable copy of a filled slot's current snapshot (or null if empty).
+   * Exposes provenance (capturedAt, label, isLiveDerived, baseFrequency) so the
+   * main thread can persist a slot without waiting for a capture event.
+   */
+  peekSnapshot(slot: SnapshotSlot): SpectralSnapshot | null {
+    const s = slot === 'A' ? this.slotA : this.slotB
+    return s.filled ? this.snapshotOf(s) : null
   }
 
   private snapshotOf(slot: Slot): SpectralSnapshot {
@@ -962,7 +974,11 @@ export class SpectralEngine {
   }
 
   liveBufferSeconds(): number {
-    return LIVE_BUFFER_SECONDS
+    // The engine retains a single current STFT frame, not a rolling history, so
+    // freeze/capture reflect the last analysis window only. Report that window's
+    // true duration (fftSize/sampleRate) — 0 before any live frame — rather than
+    // a fixed constant that would overstate how much audio can be recovered.
+    return this.hasLiveFrame ? this.fftSize / this.sampleRate : 0
   }
 
   snapshotFilled(slot: SnapshotSlot): boolean {

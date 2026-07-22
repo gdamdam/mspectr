@@ -26,9 +26,11 @@ import {
   type SpectralSnapshot,
   type XYMapping,
   type SavedInstrument,
+  type PersistedSource,
+  type SpectralPatch,
 } from '../audio/contracts'
 import { resolveParams } from '../performance/macros'
-import { getPreset } from '../performance/presets'
+import { getPreset, PRESETS } from '../performance/presets'
 import { decodePatchLink, decodeSnapshotLink } from '../sharing/patchLink'
 import { loadInstrument, saveInstrumentBundle } from '../persistence/instruments'
 import { loadLastSession, saveLastPatch } from '../persistence/lastSession'
@@ -36,6 +38,7 @@ import { getSnapshot } from '../persistence/snapshots'
 import { exportInstrumentJson, importInstrumentJson } from '../persistence/exportImport'
 import { createInitialState, reducer, hasLiveDerivedSnapshot, type Preferences } from './state'
 import { useEngine } from './useEngine'
+import type { AudioEngineApi } from '../audio/engineApi'
 import { SpectralDisplay } from '../visualization/SpectralDisplay'
 import { SourcePanel, soundLabel } from '../components/SourcePanel'
 import { CapturePanel } from '../components/CapturePanel'
@@ -72,6 +75,22 @@ function axisLabel(key: keyof SpectralParams): string {
 
 function xyMappingFor(presetId: string | null): XYMapping {
   return (presetId ? getPreset(presetId)?.xyMapping : undefined) ?? DEFAULT_XY_MAPPING
+}
+
+/** The current UI source as a persistable descriptor. */
+function currentSource(ui: { sourceKind: PersistedSource['kind']; sourceLabel: string; generatedId: PersistedSource['generatedId'] }): PersistedSource {
+  return { kind: ui.sourceKind, label: ui.sourceLabel, generatedId: ui.generatedId }
+}
+
+/**
+ * Infer a source for a legacy session that predates persisted source identity:
+ * fall back to the generated source behind the patch's preset, which is always
+ * restorable and never falsely implies a mic/tab/file was recovered.
+ */
+function inferSourceFromPatch(patch: SpectralPatch): PersistedSource {
+  const preset = patch.presetId ? getPreset(patch.presetId) : undefined
+  const generatedId = preset?.source ?? PRESETS[0].source
+  return { kind: 'generated', label: preset?.name ?? soundLabel(generatedId), generatedId }
 }
 
 const PREFS_KEY = 'mspectr.prefs'
@@ -121,7 +140,12 @@ function HeaderLevel({
   )
 }
 
-export function App() {
+export interface AppProps {
+  /** Test-only override so specs can drive a mock engine (see useEngine). */
+  engineFactory?: () => AudioEngineApi
+}
+
+export function App({ engineFactory }: AppProps = {}) {
   // Decode any shared link / persisted prefs once, before first render.
   const initial = useMemo(() => {
     const prefs = loadPrefs()
@@ -153,7 +177,7 @@ export function App() {
 
   // Cache of the actual snapshot data (heavy arrays) kept out of React.
   const snapDataRef = useRef<{ A: SpectralSnapshot | null; B: SpectralSnapshot | null }>({ A: null, B: null })
-  const controls = useEngine({ stateRef, dispatch })
+  const controls = useEngine({ stateRef, dispatch, engineFactory })
   const [starting, setStarting] = useState(false)
   const [pendingMic, setPendingMic] = useState<{ deviceId?: string } | null>(null)
   const [captureMode, setCaptureMode] = useState<CaptureMode>('evolving')
@@ -185,7 +209,7 @@ export function App() {
   // never clobbers a real session before the user has begun.
   useEffect(() => {
     if (!ui.audioStarted) return
-    const save = () => saveLastPatch(stateRef.current.patch)
+    const save = () => saveLastPatch(stateRef.current.patch, currentSource(stateRef.current.ui))
     const id = window.setInterval(save, 3000)
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') save()
@@ -272,6 +296,12 @@ export function App() {
         dispatch({ type: 'load-patch', patch: initial.lastSession.patch })
       }
       await controls.start()
+      // After the engine (and its default source) start, restore the saved
+      // source: generated sources are reacquired; mic/tab/file raise a reselect
+      // prompt rather than pretending they came back.
+      if (mode === 'continue' && initial.lastSession) {
+        controls.restoreSource(initial.lastSession.source ?? inferSourceFromPatch(initial.lastSession.patch))
+      }
     } catch (err) {
       // Surface the real cause: most failures here are the AudioWorklet module
       // failing to load (e.g. dev-mode module-worklet imports on Safari/Firefox)
@@ -293,6 +323,9 @@ export function App() {
       if (!preset) return
       dispatch({ type: 'load-preset', presetId })
       controls.setSourcePreset(preset.source, preset.name, preset.patch.params.freeze)
+      // Apply the preset's authored capture strategy and loudness calibration.
+      setCaptureMode(preset.captureStrategy)
+      controls.setCalibration(preset.calibrationDb)
     },
     [controls],
   )
@@ -380,6 +413,7 @@ export function App() {
       snapshotRefA: refA,
       snapshotRefB: refB,
       sourceLabel: stateRef.current.ui.sourceLabel,
+      source: currentSource(stateRef.current.ui),
     }
     await saveInstrumentBundle(inst, snapDataRef.current.A, snapDataRef.current.B)
   }, [])
@@ -394,7 +428,10 @@ export function App() {
       // outgoing session's spectra half-applied under the incoming patch.
       const snapA = inst.snapshotRefA ? await getSnapshot(inst.snapshotRefA) : null
       const snapB = inst.snapshotRefB ? await getSnapshot(inst.snapshotRefB) : null
-      dispatch({ type: 'load-patch', patch: inst.patch, sourceLabel: inst.sourceLabel })
+      // Don't set the label here — restoreSource is authoritative for the source
+      // identity, so a non-restorable saved source can't leave a stale label
+      // implying it's active.
+      dispatch({ type: 'load-patch', patch: inst.patch })
       for (const [slot, snap] of [
         ['A', snapA],
         ['B', snapB],
@@ -408,6 +445,8 @@ export function App() {
           clearSnapshot(slot)
         }
       }
+      // Reacquire a generated source, or prompt to reselect a mic/tab/file.
+      controls.restoreSource(inst.source ?? inferSourceFromPatch(inst.patch))
       dispatch({ type: 'open-modal', modal: null })
     },
     [controls, clearSnapshot],
@@ -620,6 +659,7 @@ export function App() {
             starting={starting}
             hasLastSession={initial.lastSession != null}
             lastSavedAt={initial.lastSession?.savedAt ?? null}
+            sourceReselect={ui.sourceReselect}
             presetId={patch.presetId}
             onStart={onStart}
             onSelectPreset={onSelectPreset}

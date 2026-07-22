@@ -8,7 +8,7 @@
 import { useRef, useState } from 'react'
 import type { ChangeEvent, DragEvent } from 'react'
 import { GENERATED_SOURCE_IDS } from '../audio/contracts'
-import type { GeneratedSourceId, Preset } from '../audio/contracts'
+import type { GeneratedSourceId, PersistedSource, Preset } from '../audio/contracts'
 import { PRESETS } from '../performance/presets'
 import { supportsInputDeviceSelection, supportsTabCapture } from '../sources/capabilities'
 import type { AudioInputKind } from '../sources/types'
@@ -51,6 +51,11 @@ export interface SourcePanelProps {
   /** When the last session was saved (ms since epoch), or null if unknown. */
   lastSavedAt: number | null
   presetId: string | null
+  /**
+   * A restored session referenced this source but it can't be reacquired
+   * (mic/tab/file). Non-null shows a reselect prompt; snapshots stay playable.
+   */
+  sourceReselect: PersistedSource | null
   onStart: (mode: 'continue' | 'fresh') => void
   onSelectPreset: (presetId: string) => void
   onSelectSound: (id: GeneratedSourceId) => void
@@ -78,6 +83,7 @@ export function SourcePanel({
   hasLastSession,
   lastSavedAt,
   presetId,
+  sourceReselect,
   onStart,
   onSelectPreset,
   onSelectSound,
@@ -165,6 +171,13 @@ export function SourcePanel({
           <span className="source__dot" data-kind={sourceKind} aria-hidden="true" />
           <span className="source__kind">{KIND_LABEL[sourceKind]}</span>
           <span className="source__name">{sourceLabel}</span>
+        </p>
+      )}
+
+      {sourceReselect && (
+        <p className="source__reselect" role="alert">
+          “{sourceReselect.label}” ({KIND_LABEL[sourceReselect.kind]}) can’t be restored after a reload — its
+          snapshots are still playable. Choose an input below to keep going.
         </p>
       )}
 

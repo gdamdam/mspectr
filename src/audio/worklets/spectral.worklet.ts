@@ -12,8 +12,20 @@ import {
   type SnapshotSlot,
   DISPLAY_BINS,
   qualityConfig,
+  sanitizeParams,
+  sanitizeSnapshot,
 } from '../contracts'
 import { SpectralEngine } from '../SpectralEngine'
+import { LoadMeter } from '../loadMeter'
+
+// Monotonic wall clock for render-cost measurement. `performance.now` is present
+// in AudioWorkletGlobalScope on some engines and gives finer resolution; Date is
+// always available as a fallback. Both return milliseconds. This is used only
+// for the load estimate — never for DSP, which stays fully deterministic.
+const nowMs: () => number =
+  typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? () => performance.now()
+    : () => Date.now()
 
 class SpectralProcessor extends AudioWorkletProcessor {
   private engine: SpectralEngine
@@ -23,6 +35,13 @@ class SpectralProcessor extends AudioWorkletProcessor {
   private blockCounter = 0
   private spectrum = new Float32Array(DISPLAY_BINS)
   private frozen = new Float32Array(DISPLAY_BINS)
+  // --- render-load measurement (see updateLoad) ---
+  /** Summed render() wall time (ms) over the current telemetry window. */
+  private renderTimeAccum = 0
+  /** Summed frames rendered over the current telemetry window. */
+  private renderFramesAccum = 0
+  /** Smoothing + hysteresis for the measured load; transitions post events. */
+  private loadMeter = new LoadMeter()
 
   constructor() {
     super()
@@ -41,9 +60,14 @@ class SpectralProcessor extends AudioWorkletProcessor {
   }
 
   private handle(cmd: EngineCommand): void {
+    // Reject structurally malformed messages before touching the engine.
+    if (!cmd || typeof (cmd as { type?: unknown }).type !== 'string') return
     switch (cmd.type) {
       case 'set-params':
-        this.engine.setParams(cmd.params)
+        // Re-run the boundary sanitizer even though the main thread already does:
+        // a raw postMessage must never reach the DSP loop with an out-of-range or
+        // non-finite parameter. sanitizeParams is the single source of bounds.
+        this.engine.setParams(sanitizeParams(cmd.params))
         break
       case 'set-quality':
         this.engine.setQuality(cmd.quality)
@@ -68,9 +92,13 @@ class SpectralProcessor extends AudioWorkletProcessor {
           cmd.capturedAt,
         )
         break
-      case 'load-snapshot':
-        this.engine.loadSnapshot(cmd.slot, cmd.snapshot)
+      case 'load-snapshot': {
+        // Validate bounds/lengths before the engine indexes or resamples it;
+        // a malformed snapshot is ignored rather than allowed to misindex.
+        const snap = sanitizeSnapshot(cmd.snapshot)
+        if (snap) this.engine.loadSnapshot(cmd.slot, snap)
         break
+      }
       case 'clear-snapshot':
         this.engine.clearSnapshot(cmd.slot)
         break
@@ -137,7 +165,15 @@ class SpectralProcessor extends AudioWorkletProcessor {
       monoIn.fill(0)
     }
 
+    // Measure the wall time the DSP takes against this quantum's real-time
+    // budget. A single 128-frame render is too fast for a coarse clock, so the
+    // cost is accumulated across the telemetry window and divided by that
+    // window's total budget in postTelemetry — a defensible measured proxy for
+    // scheduling pressure, not voice count. Two clock reads per quantum only.
+    const t0 = nowMs()
     this.engine.render(monoIn, outL, outR)
+    this.renderTimeAccum += nowMs() - t0
+    this.renderFramesAccum += len
 
     // Throttled telemetry.
     if (++this.blockCounter >= this.telemetryInterval) {
@@ -147,8 +183,24 @@ class SpectralProcessor extends AudioWorkletProcessor {
     return true
   }
 
+  /**
+   * Fold the window's accumulated render time into the smoothed load estimate
+   * and emit an overload event only when the latched state flips. `load` is the
+   * fraction of real time the DSP consumed: renderMs / (frames/sampleRate * 1000).
+   */
+  private updateLoad(): void {
+    const changed = this.loadMeter.update(this.renderTimeAccum, this.renderFramesAccum, sampleRate)
+    this.renderTimeAccum = 0
+    this.renderFramesAccum = 0
+    if (changed) {
+      const evt: EngineEvent = { type: 'overload', active: this.loadMeter.isOverloaded }
+      this.port.postMessage(evt)
+    }
+  }
+
   private postTelemetry(): void {
     const e = this.engine
+    this.updateLoad()
     e.fillDisplaySpectrum(this.spectrum, 'live')
     const hasSnapshot = e.snapshotFilled('A') || e.snapshotFilled('B')
     let frozenOut: Float32Array | null = null
@@ -166,7 +218,9 @@ class SpectralProcessor extends AudioWorkletProcessor {
       clip: peak >= 0.999,
       frozenLive: e.isFrozenLive(),
       liveBufferSeconds: e.liveBufferSeconds(),
-      cpuLoad: Math.min(1, e.activeVoices() / 8),
+      // Measured render cost (see updateLoad), clamped to the reported 0..1
+      // range — this is real scheduling pressure, not activeVoices/maxVoices.
+      cpuLoad: Math.min(1, this.loadMeter.value),
     }
     const evt: EngineEvent = { type: 'telemetry', telemetry }
     const transfer: ArrayBuffer[] = [telemetry.spectrum.buffer as ArrayBuffer]

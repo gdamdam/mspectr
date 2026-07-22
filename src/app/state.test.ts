@@ -30,6 +30,37 @@ describe('reducer — preset + patch loading', () => {
     expect(after).toBe(before)
   })
 
+  it('load-preset records the generated source id', () => {
+    const target = PRESETS[3]
+    const s = reducer(init(), { type: 'load-preset', presetId: target.id })
+    expect(s.ui.generatedId).toBe(target.source)
+  })
+
+  it('set-source tracks the generated id and clears any reselect prompt', () => {
+    let s = reducer(init(), { type: 'source-unavailable', source: { kind: 'microphone', label: 'Mic', generatedId: null } })
+    expect(s.ui.sourceReselect).not.toBeNull()
+    s = reducer(s, { type: 'set-source', kind: 'generated', label: 'Bell', generatedId: 'fm-bell' })
+    expect(s.ui.sourceKind).toBe('generated')
+    expect(s.ui.generatedId).toBe('fm-bell')
+    expect(s.ui.sourceReselect).toBeNull()
+  })
+
+  it('set-source nulls the generated id for non-generated inputs', () => {
+    const s = reducer(init(), { type: 'set-source', kind: 'microphone', label: 'Studio mic' })
+    expect(s.ui.sourceKind).toBe('microphone')
+    expect(s.ui.generatedId).toBeNull()
+  })
+
+  it('source-unavailable raises the reselect prompt without changing the live source', () => {
+    const before = init()
+    const saved = { kind: 'tab' as const, label: 'Tab audio', generatedId: null }
+    const s = reducer(before, { type: 'source-unavailable', source: saved })
+    expect(s.ui.sourceReselect).toEqual(saved)
+    // The actual (playable) source identity is untouched — no false claim.
+    expect(s.ui.sourceKind).toBe(before.ui.sourceKind)
+    expect(s.ui.sourceLabel).toBe(before.ui.sourceLabel)
+  })
+
   it('retains an authored live freeze in frozen presets', () => {
     const frozen = PRESETS.find((preset) => preset.patch.params.freeze)
     expect(frozen).toBeDefined()

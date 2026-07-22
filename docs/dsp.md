@@ -22,8 +22,9 @@ fixed bin count for rendering.
 ## Capture: Snapshots
 
 A captured frame is stored as a `SpectralSnapshot`: derived **magnitude** plus
-**optional phase** — never the original waveform. Two slots, **A** and **B**,
-feed the morph stage of resynthesis.
+**optional phase** — derived spectral data, not the raw waveform (lossy, though
+approximate reconstruction of the source remains possible). Two slots, **A** and
+**B**, feed the morph stage of resynthesis.
 
 ## Resynthesis and the operation chain
 
