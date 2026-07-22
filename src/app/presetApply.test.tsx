@@ -1,12 +1,49 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App } from './App'
 import { createMockEngine, type MockEngine } from './testMockEngine'
 import { PRESETS } from '../performance/presets'
+import { soundLabel } from '../components/SourcePanel'
 import type { AudioEngineApi } from '../audio/engineApi'
-import type { CaptureMode } from '../audio/contracts'
+import type { CaptureMode, SnapshotSlot, SpectralSnapshot } from '../audio/contracts'
+
+/** A minimal, deterministic snapshot for simulating a capture in jsdom. */
+function fakeSnapshot(label: string): SpectralSnapshot {
+  const binCount = 8
+  return {
+    schemaVersion: 1,
+    fftSize: 16,
+    binCount,
+    analysisSampleRate: 48_000,
+    baseFrequency: 220,
+    frameCount: 1,
+    frameHop: 256,
+    magnitude: new Float32Array(binCount).fill(0.25),
+    phase: null,
+    sourceLabel: label,
+    capturedAt: 1000,
+    isLiveDerived: false,
+  }
+}
+
+/** Boot the App with a mock engine and start audio so the pickers are enabled. */
+async function startedApp() {
+  const user = userEvent.setup()
+  const engine = createMockEngine()
+  ;(engine as { context: AudioContext | null }).context = fakeAudioContext()
+  render(<App engineFactory={() => engine as unknown as AudioEngineApi} />)
+  await user.click(screen.getByRole('button', { name: /start audio/i }))
+  return { user, engine: engine as MockEngine }
+}
+
+/** Simulate the engine reporting a captured snapshot into a slot. */
+async function emitCapture(engine: MockEngine, slot: SnapshotSlot, label: string) {
+  await act(async () => {
+    engine.emitSnapshot(slot, fakeSnapshot(label))
+  })
+}
 
 /** captureStrategy → the visible capture-mode radio label. */
 const MODE_RADIO: Record<CaptureMode, string> = { frame: 'Single', average: 'Average', evolving: 'Living' }
@@ -80,5 +117,55 @@ describe('preset selection applies captureStrategy and calibrationDb (D4)', () =
 
     // captureStrategy seeded the capture-mode control.
     expect(screen.getByRole('radio', { name: MODE_RADIO[target.captureStrategy] })).toBeChecked()
+  })
+})
+
+describe('snapshot-clearing semantics on source change (D3)', () => {
+  it('selecting a factory preset clears both A and B snapshots (UI + engine)', async () => {
+    const { user, engine } = await startedApp()
+
+    // Simulate a live capture into both slots.
+    await emitCapture(engine, 'A', 'Captured A')
+    await emitCapture(engine, 'B', 'Captured B')
+    expect(screen.getByText('Captured A')).toBeInTheDocument()
+    expect(screen.getByText('Captured B')).toBeInTheDocument()
+
+    const clearsBefore = engine.calls.filter((c) => c.method === 'clearSnapshot').length
+
+    // Select a factory preset different from the default (index 0) so onChange fires.
+    const target = PRESETS.find((p) => p.id !== PRESETS[0].id)!
+    await user.click(screen.getByRole('button', { name: /loads a complete scene/i }))
+    await user.click(screen.getByRole('option', { name: target.name }))
+
+    // Engine slot state cleared for BOTH slots, and any audition stopped.
+    const clears = engine.calls.filter((c) => c.method === 'clearSnapshot')
+    expect(clears.length - clearsBefore).toBe(2)
+    expect(clears.map((c) => c.args[0])).toEqual(expect.arrayContaining(['A', 'B']))
+    expect(engine.calls.some((c) => c.method === 'audition' && c.args[0] === null)).toBe(true)
+
+    // UI metadata cleared: both slots read empty again.
+    expect(screen.queryByText('Captured A')).not.toBeInTheDocument()
+    expect(screen.queryByText('Captured B')).not.toBeInTheDocument()
+    expect(screen.getAllByText('No capture')).toHaveLength(2)
+  })
+
+  it('selecting a standalone generated sound PRESERVES snapshots', async () => {
+    const { user, engine } = await startedApp()
+
+    await emitCapture(engine, 'A', 'Captured A')
+    expect(screen.getByText('Captured A')).toBeInTheDocument()
+
+    const clearsBefore = engine.calls.filter((c) => c.method === 'clearSnapshot').length
+
+    // Pick a built-in sound from the input picker (NOT a full preset scene).
+    await user.click(screen.getByRole('button', { name: /built-in sound/i }))
+    await user.click(screen.getByRole('option', { name: soundLabel('gong') }))
+
+    // The source swapped (setSourceNode) but NO snapshot was cleared.
+    expect(engine.calls.some((c) => c.method === 'setSourceNode')).toBe(true)
+    const clearsAfter = engine.calls.filter((c) => c.method === 'clearSnapshot').length
+    expect(clearsAfter).toBe(clearsBefore)
+    // UI metadata for the captured slot survives the input change.
+    expect(screen.getByText('Captured A')).toBeInTheDocument()
   })
 })

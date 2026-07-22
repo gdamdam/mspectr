@@ -4,6 +4,7 @@ import {
   createInitialState,
   hasLiveDerivedSnapshot,
   allMacrosLinked,
+  INITIAL_PREFS,
   type AppState,
 } from './state'
 import { resolveParams, MACRO_TARGETS } from '../performance/macros'
@@ -66,6 +67,27 @@ describe('reducer — preset + patch loading', () => {
     expect(frozen).toBeDefined()
     const s = reducer(init(), { type: 'load-preset', presetId: frozen!.id })
     expect(s.patch.params.freeze).toBe(true)
+  })
+
+  it('load-preset clears any held A/B snapshots so the preset source is heard', () => {
+    let s = reducer(init(), { type: 'snapshot-captured', slot: 'A', label: 'a', capturedAt: 1, isLiveDerived: false })
+    s = reducer(s, { type: 'snapshot-captured', slot: 'B', label: 'b', capturedAt: 2, isLiveDerived: false })
+    s = reducer(s, { type: 'set-auditioning', slot: 'A' })
+    expect(s.ui.snapshotA).not.toBeNull()
+    expect(s.ui.snapshotB).not.toBeNull()
+    s = reducer(s, { type: 'load-preset', presetId: PRESETS[3].id })
+    expect(s.ui.snapshotA).toBeNull()
+    expect(s.ui.snapshotB).toBeNull()
+    expect(s.ui.auditioning).toBeNull()
+  })
+
+  it('load-patch (saved session) PRESERVES snapshots', () => {
+    let s = reducer(init(), { type: 'snapshot-captured', slot: 'A', label: 'a', capturedAt: 1, isLiveDerived: false })
+    const before = s.ui.snapshotA
+    s = reducer(s, { type: 'load-patch', patch: PRESETS[2].patch })
+    // A session recall restores its own snapshots via loadSnapshot afterwards;
+    // load-patch itself must never wipe them (that would drop the saved spectra).
+    expect(s.ui.snapshotA).toBe(before)
   })
 
   it('load-patch sanitizes malformed shared-link input', () => {
@@ -159,6 +181,16 @@ describe('reducer — snapshot metadata', () => {
     expect(hasLiveDerivedSnapshot(s.ui)).toBe(false)
     s = reducer(s, { type: 'snapshot-captured', slot: 'B', label: 'mic', capturedAt: 5, isLiveDerived: true })
     expect(hasLiveDerivedSnapshot(s.ui)).toBe(true)
+  })
+})
+
+describe('preferences defaults', () => {
+  it('monitoring is OFF by default for a new user', () => {
+    // Monitoring mixes the raw generator into the output, bypassing preset
+    // processing — a fresh install must not do that. Persisted prefs (loadPrefs)
+    // can still turn it back on for a returning user who opted in.
+    expect(INITIAL_PREFS.monitor).toBe(false)
+    expect(createInitialState().ui.prefs.monitor).toBe(false)
   })
 })
 

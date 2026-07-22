@@ -103,7 +103,9 @@ function loadPrefs(): Preferences | undefined {
     return {
       reducedMotion: Boolean(p.reducedMotion),
       reducedIntensity: Boolean(p.reducedIntensity),
-      monitor: p.monitor === undefined ? true : Boolean(p.monitor),
+      // A previously-persisted preference is honoured exactly; only a first-time
+      // user (no stored value) falls back to the off default (see INITIAL_PREFS).
+      monitor: p.monitor === undefined ? false : Boolean(p.monitor),
     }
   } catch {
     return undefined
@@ -321,9 +323,22 @@ export function App({ engineFactory }: AppProps = {}) {
     (presetId: string) => {
       const preset = getPreset(presetId)
       if (!preset) return
+      // A factory preset is a complete scene. Clear any held A/B snapshots FIRST —
+      // the worklet slot state (engine.clearSnapshot), the heavy data cache
+      // (snapDataRef), and any in-flight audition — so the preset's own live
+      // source is what's heard rather than a stale captured spectrum. Clearing on
+      // the engine imperatively (before the source swap is posted) keeps the
+      // worklet command order deterministic and avoids racing the React state.
+      // The reducer's load-preset action clears the matching UI metadata.
+      snapDataRef.current = { A: null, B: null }
+      controls.engine.clearSnapshot('A')
+      controls.engine.clearSnapshot('B')
+      controls.engine.audition(null)
       dispatch({ type: 'load-preset', presetId })
       controls.setSourcePreset(preset.source, preset.name, preset.patch.params.freeze)
       // Apply the preset's authored capture strategy and loudness calibration.
+      // NOTE: this only pre-selects the capture MODE — no capture happens until the
+      // player explicitly presses Capture. The preset merely prepares that mode.
       setCaptureMode(preset.captureStrategy)
       controls.setCalibration(preset.calibrationDb)
     },

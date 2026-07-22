@@ -91,6 +91,9 @@ export function CapturePanel({
           Capture → B
         </button>
       </div>
+      <p className="capture__hint muted">
+        Presets preselect a capture mode — capturing is always a manual press.
+      </p>
 
       <div className="capture__live">
         <button

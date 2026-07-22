@@ -165,7 +165,11 @@ export type Action =
 export const INITIAL_PREFS: Preferences = {
   reducedMotion: false,
   reducedIntensity: false,
-  monitor: true,
+  // Off by default: monitoring mixes the RAW generator into the output, bypassing
+  // all spectral preset processing and masking the differences between presets.
+  // A new user hears the processed instrument; the persisted preference (loadPrefs)
+  // still restores an explicit opt-in.
+  monitor: false,
 }
 
 /** The preset shown on first load. First curated entry. */
@@ -229,6 +233,13 @@ export function reducer(state: AppState, action: Action): AppState {
           generatedId: preset.source,
           sourceReselect: null,
           auditioning: null,
+          // A factory preset is a complete scene: clear any held A/B snapshots so
+          // the preset's own live source is heard, not a stale captured spectrum.
+          // (The engine's slot state + heavy data cache are cleared alongside this
+          // in App.onSelectPreset. Loading a saved session uses load-patch, which
+          // preserves snapshots.)
+          snapshotA: null,
+          snapshotB: null,
         },
       }
     }

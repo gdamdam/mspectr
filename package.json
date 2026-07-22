@@ -1,7 +1,7 @@
 {
   "name": "mspectr",
   "private": true,
-  "version": "1.3.0",
+  "version": "1.4.0",
   "license": "AGPL-3.0-or-later",
   "description": "mspectr — a browser-native spectral resynthesis and performance instrument. Capture a sound. Play what it is made of.",
   "type": "module",

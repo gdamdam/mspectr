@@ -4,6 +4,44 @@ All notable changes to mspectr are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-07-22
+
+### Changed
+- **Source monitoring off by default**: generated-source monitoring previously
+  defaulted on, mixing the raw generator into the output at −3 dB and bypassing
+  every spectral preset — which made presets sound alike. A new user now hears
+  the processed instrument; a persisted monitor preference is still honoured, and
+  microphone/tab feedback protections are unchanged.
+- **Presets span all fourteen generated sources**: the 23 factory presets were
+  redistributed from four generators to all fourteen (glass-harmonica, singing-bowl,
+  brass-swell, vowel-voice, reed-organ, fm-bell, gong, bowed-metal, tanpura, air-pad,
+  plus the original harmonic-string, breath-choir, metallic-strike, and noise-reed).
+  Each preset's source now matches its name, hint, group, envelope, and intended
+  character; `calibrationDb` trims were retuned so presets stay level-matched.
+
+### Fixed
+- **Preset selection no longer keeps stale spectra**: selecting a factory preset
+  now clears both A and B snapshots — UI metadata, the cached snapshot data, and
+  the worklet slot state (plus any in-flight audition) — so the preset's own live
+  source is actually heard. Choosing a standalone built-in sound preserves
+  snapshots, and loading a saved session/instrument restores its snapshots as
+  before. Engine slots are cleared imperatively before the source swap is posted,
+  avoiding a race between React state and worklet commands.
+- **Capture stays explicit**: a preset's `captureStrategy` only preselects the
+  capture mode; nothing is captured until the player presses Capture. Copy and a
+  preset hint that implied an evolving capture was already present were corrected,
+  and evolving controls remain functional after a capture.
+
+### Tests
+- Preset-diversity validation now compares the EFFECTIVE resolved parameters
+  (`resolveParams(patch, xyMapping)`, after linked macros + XY takeover), asserts
+  no two presets share an identical effective signature, reports the closest pair
+  for review, and requires all fourteen generators to be represented. Added
+  lightweight rendered-audio feature checks (zero-crossing brightness, autocorrelation
+  tonality, transient/steady ratio) confirming the preset sources are acoustically
+  diverse, integration tests for the snapshot-clearing semantics, and a
+  monitor-default test.
+
 ## [1.3.0] - 2026-07-22
 
 ### Added

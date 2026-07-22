@@ -295,7 +295,10 @@ export function SourcePanel({
         </div>
 
         {audioStarted ? (
-          <label className="source__monitor">
+          <label
+            className="source__monitor"
+            title="Hear the raw source directly. This bypasses the spectral processing, so presets sound alike while it is on. Off by default — capture and play to hear a preset."
+          >
             <input
               type="checkbox"
               checked={monitor && sourceKind === 'generated'}

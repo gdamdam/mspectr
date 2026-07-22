@@ -2,10 +2,16 @@
  * Authored preset library for mspectr — a curated set of spectral scenes.
  *
  * Each Preset is a complete, valid object: a full SpectralPatch (which passes
- * sanitizePatch with no change of meaning), one of the four built-in
- * GeneratedSourceId sources, a coherent XY mapping, a capture strategy, and a
- * calibrationDb loudness trim. Sources are assumed ~-6 dBFS; calibration trims
- * stay modest (mostly within ±6 dB) so presets sit at comparable loudness.
+ * sanitizePatch with no change of meaning), one of the built-in GeneratedSourceId
+ * sources, a coherent XY mapping, a capture strategy, and a calibrationDb loudness
+ * trim. Sources are assumed ~-6 dBFS; calibration trims stay modest (mostly within
+ * ±6 dB) so presets sit at comparable loudness.
+ *
+ * Source coverage: the library spans ALL 14 generated sources so each preset's
+ * character is carried by the generator best suited to it (a glassy preset on the
+ * glass-harmonica, an organ on the reed-organ, a bowl clang on the singing-bowl,
+ * …) rather than colouring four generators with spectral processing alone. A
+ * source-coverage test in presets.test.ts guards this.
  *
  * Design lineage: structure + the "small curated set, not a browser" stance is
  * adapted from mdrone (mdrone/src/engine/presets.ts) — hint/group per entry,
@@ -82,16 +88,19 @@ function macros(o: Partial<MacroValues>): MacroValues {
 // ---------------------------------------------------------------------------
 
 export const PRESETS: Preset[] = [
-  // 1 — Glass Memory: frozen harmonic string, VERY bright (max tilt), locked
-  //     phase, octave up. Facet: bright + high formant + phase-lock stillness.
+  // 1 — Glass Memory: frozen glass-harmonica, VERY bright (max tilt), locked
+  //     phase, octave up. The pure high glassy sines are the natural home for a
+  //     "glass" preset. Facet: bright + high formant + phase-lock stillness.
   {
     id: 'glass-memory',
     name: 'Glass Memory',
-    hint: 'Frozen harmonic shimmer held perfectly still — glassy and bright.',
+    hint: 'Frozen glass shimmer held perfectly still — pure, glassy and bright.',
     group: 'Frozen',
-    source: 'harmonic-string',
+    source: 'glass-harmonica',
     captureStrategy: 'average',
-    calibrationDb: -2,
+    // Pure sines carry less energy than a full harmonic series at equal peak —
+    // trim toward unity so it sits with the denser presets.
+    calibrationDb: 0,
     xyMapping: { x: { param: 'shift', min: -7, max: 7 }, y: { param: 'phaseMotion', min: 0, max: 0.6 } },
     patch: patch('glass-memory', {
       scale: 'major',
@@ -158,16 +167,19 @@ export const PRESETS: Preset[] = [
     }),
   },
 
-  // 3 — Iron Bloom: metallic strike, bright, gated + animated, plucked envelope.
-  //     Facet: inharmonic bell source + gate + fast attack + fifths, dry-ish.
+  // 3 — Iron Bloom: gong (tam-tam wash), bright, gated + animated, plucked
+  //     envelope. A struck metal MASS that blooms → the dense broadband gong is
+  //     the literal source; the gate sparsens its wash into ringing partials.
+  //     Facet: inharmonic wash + gate + fast attack + fifths, dry-ish.
   {
     id: 'iron-bloom',
     name: 'Iron Bloom',
     hint: 'A struck metal mass blooming into ringing inharmonic overtones.',
     group: 'Metallic',
-    source: 'metallic-strike',
+    source: 'gong',
     captureStrategy: 'frame',
-    calibrationDb: -5,
+    // The gong is the densest generator — trim hardest of the metallic set.
+    calibrationDb: -6,
     xyMapping: { x: { param: 'formant', min: -7, max: 7 }, y: { param: 'gate', min: 0, max: 0.5 } },
     patch: patch('iron-bloom', {
       scale: 'chromatic',
@@ -234,16 +246,18 @@ export const PRESETS: Preset[] = [
     }),
   },
 
-  // 5 — Harmonic Fog: harmonic string under DEEP blur + diffusion, near-frozen.
+  // 5 — Harmonic Fog: air-pad under DEEP blur + diffusion, near-frozen. The
+  //     air-pad's drifting resonant peaks are already a diffuse, breathy texture;
+  //     heavy blur dissolves its tonal peaks into fog.
   //     Facet: the one deliberate high-blur "fog" preset — smear + animate.
   {
     id: 'harmonic-fog',
     name: 'Harmonic Fog',
     hint: 'Pitched material dissolved into a slow, diffuse spectral fog.',
     group: 'Textural',
-    source: 'harmonic-string',
+    source: 'air-pad',
     captureStrategy: 'average',
-    calibrationDb: -1,
+    calibrationDb: -2,
     xyMapping: { x: { param: 'blur', min: 0.2, max: 0.9 }, y: { param: 'diffusion', min: 0.2, max: 0.8 } },
     patch: patch('harmonic-fog', {
       scale: 'pentatonic',
@@ -271,14 +285,16 @@ export const PRESETS: Preset[] = [
     }),
   },
 
-  // 6 — Breath Organ: breath-choir as a sustaining organ, shift-stacked fifths.
-  //     Facet: airy source pitched DOWN (shift) into open fifths, sustained organ.
+  // 6 — Breath Organ: reed-organ (harmonium) as a sustaining organ, shift-stacked
+  //     fifths. The reed-organ IS a pump-organ, so the pipe-organ character comes
+  //     from the source rather than being faked on an airy pad.
+  //     Facet: harmonium pitched DOWN (shift) into open fifths, sustained organ.
   {
     id: 'breath-organ',
     name: 'Breath Organ',
     hint: 'A breathing pipe-organ pad stacked in open fifths.',
     group: 'Organ',
-    source: 'breath-choir',
+    source: 'reed-organ',
     captureStrategy: 'average',
     calibrationDb: -4,
     xyMapping: { x: { param: 'shift', min: -12, max: 12 }, y: { param: 'harmonyMix', min: 0, max: 0.9 } },
@@ -288,9 +304,9 @@ export const PRESETS: Preset[] = [
       octave: -1,
       params: params({
         freeze: false,
-        tilt: -0.55, // darken the airy source into a warm organ body (distinct from Frozen Choir)
-        shift: -12, // relocate the whole spectrum an octave down — genuinely separates the breath-choir trio
-        formant: -5, // pull the breath formants down into an organ register
+        tilt: -0.55, // warm, dark organ body
+        shift: -12, // relocate the whole spectrum an octave down for a big pedal register
+        formant: -5, // pull the reed formants down into an organ register
         blur: 0.2,
         phaseMotion: 0.2,
         harmonyVoices: 3,
@@ -310,16 +326,19 @@ export const PRESETS: Preset[] = [
     }),
   },
 
-  // 7 — Spectral Bells: metallic strike, MAX bright + shimmer harmony, sparse.
-  //     Facet: bell source + shimmer octave stack + high tilt, wide + spacious.
+  // 7 — Spectral Bells: fm-bell, MAX bright + shimmer harmony, sparse. The FM
+  //     bell's clangorous inharmonic sidebands are the archetypal "bell" tone.
+  //     Facet: FM bell + shimmer octave stack + high tilt, wide + spacious.
   {
     id: 'spectral-bells',
     name: 'Spectral Bells',
     hint: 'Bright struck bells ringing up into shimmering octave harmonics.',
     group: 'Metallic',
-    source: 'metallic-strike',
+    source: 'fm-bell',
     captureStrategy: 'frame',
-    calibrationDb: -4,
+    // A single FM carrier/modulator pair is thinner than the struck-bar strike —
+    // less negative trim so the bells stay present.
+    calibrationDb: -2,
     xyMapping: { x: { param: 'shift', min: -12, max: 12 }, y: { param: 'phaseMotion', min: 0, max: 0.8 } },
     patch: patch('spectral-bells', {
       scale: 'major',
@@ -387,16 +406,18 @@ export const PRESETS: Preset[] = [
     }),
   },
 
-  // 9 — Formant Tide: harmonic string, warm mid-dark, swept formant, octaves.
-  //     Facet: string darkened + downward formant sweep + octave doubling, mellow.
+  // 9 — Formant Tide: brass-swell, warm mid-dark, swept formant, octaves. The
+  //     brass-swell already sweeps a bright formant up its harmonic series over
+  //     the loop — the "tide" rides that moving formant.
+  //     Facet: brass darkened + downward formant sweep + octave doubling, mellow.
   {
     id: 'formant-tide',
     name: 'Formant Tide',
-    hint: 'A vowel-like formant tide rolling over a sustained string.',
+    hint: 'A vowel-like formant tide rolling over a sustained brass swell.',
     group: 'Organ',
-    source: 'harmonic-string',
+    source: 'brass-swell',
     captureStrategy: 'average',
-    calibrationDb: -2,
+    calibrationDb: -3,
     xyMapping: { x: { param: 'formant', min: -7, max: 7 }, y: { param: 'tilt', min: -1, max: 0.6 } },
     patch: patch('formant-tide', {
       scale: 'dorian',
@@ -404,8 +425,8 @@ export const PRESETS: Preset[] = [
       octave: -1,
       params: params({
         freeze: false,
-        tilt: -0.4, // warm/dark string — contrast to bright Glass Memory
-        shift: -7, // drop spectral energy a fifth — pulls it clear of Harmonic Fog
+        tilt: -0.4, // warm/dark brass body
+        shift: -7, // drop spectral energy a fifth for a deeper swell
         formant: -4, // formants swept down for the vowel "tide"
         blur: 0.15,
         phaseMotion: 0.3,
@@ -501,14 +522,15 @@ export const PRESETS: Preset[] = [
     }),
   },
 
-  // 12 — Harmonic Cloud: HARMONIZE + spectral MOTION. A shimmering stack of
-  //      octave/fifth voices that drifts and breathes (animated phase).
+  // 12 — Harmonic Cloud: HARMONIZE + spectral MOTION on the tanpura. Its
+  //      jvari-buzzing sympathetic-string drone is already a shimmering, slowly
+  //      evolving harmonic cloud — harmony + animated phase amplify that drift.
   {
     id: 'harmonic-cloud',
     name: 'Harmonic Cloud',
     hint: 'A shimmering harmonized cloud that drifts and breathes. Ride MOTION and HARMONY.',
     group: 'Living',
-    source: 'harmonic-string',
+    source: 'tanpura',
     captureStrategy: 'evolving',
     calibrationDb: -4,
     xyMapping: { x: { param: 'harmonyMix', min: 0, max: 0.9 }, y: { param: 'phaseMotion', min: 0.1, max: 1 } },
@@ -645,7 +667,7 @@ export const PRESETS: Preset[] = [
   {
     id: 'spectral-shift',
     name: 'Spectral Shift',
-    hint: 'Living capture bent inharmonic — sweep X to slide the whole spectrum off its harmonics.',
+    hint: 'Capture Living, then sweep X to slide the whole spectrum off its harmonics.',
     group: 'Living',
     source: 'harmonic-string',
     captureStrategy: 'evolving',
@@ -722,15 +744,16 @@ export const PRESETS: Preset[] = [
     }),
   },
 
-  // 18 — Formant Choir: LIVING breath-choir with the XY sweeping FORMANT across
-  //      its full range — vowels morph a↔i↔u under the hand. Bright, shimmering,
-  //      wide. Showcases the FORMANT sweep on the vocal source.
+  // 18 — Formant Choir: LIVING vowel-voice with the XY sweeping FORMANT across
+  //      its full range — vowels morph a↔i↔u under the hand. The vowel-voice is
+  //      the true formant source (a glottal pulse through vocal formants), so the
+  //      FORMANT sweep acts on real vowel resonances. Bright, shimmering, wide.
   {
     id: 'formant-choir',
     name: 'Formant Choir',
-    hint: 'A living choir whose vowel morphs under your hand — sweep X to slide the formant a↔i↔u.',
+    hint: 'A living voice whose vowel morphs under your hand — sweep X to slide the formant a↔i↔u.',
     group: 'Living',
-    source: 'breath-choir',
+    source: 'vowel-voice',
     captureStrategy: 'evolving',
     calibrationDb: -3,
     xyMapping: { x: { param: 'formant', min: -12, max: 12 }, y: { param: 'harmonyMix', min: 0, max: 0.85 } },
@@ -799,15 +822,15 @@ export const PRESETS: Preset[] = [
     }),
   },
 
-  // 20 — Morph Veil: A/B MORPH on the breath-choir. Capture two vowels, then
+  // 20 — Morph Veil: A/B MORPH on the vowel-voice. Capture two vowels, then
   //      sweep X to glide between them through a diffuse veil. Distinct from
   //      Morph Study (different source, harmony, scale, motion).
   {
     id: 'morph-veil',
     name: 'Morph Veil',
-    hint: 'Capture two breath vowels into A and B, then sweep X to morph across a diffuse veil.',
+    hint: 'Capture two vowels into A and B, then sweep X to morph across a diffuse veil.',
     group: 'Living',
-    source: 'breath-choir',
+    source: 'vowel-voice',
     captureStrategy: 'evolving',
     calibrationDb: -3,
     xyMapping: { x: { param: 'morph', min: 0, max: 1 }, y: { param: 'blur', min: 0.1, max: 0.7 } },
@@ -838,17 +861,19 @@ export const PRESETS: Preset[] = [
     }),
   },
 
-  // 21 — Black Ember: the DARK extreme. Metallic strike crushed to the bottom
+  // 21 — Black Ember: the DARK extreme. Singing-bowl crushed to the bottom
   //      (tilt -0.9) with formants pulled down and a spectral gate — a smouldering,
-  //      subterranean clang. Anchors the dark end of the tilt range.
+  //      subterranean clang. The low, inharmonic, beating metal bowl is already
+  //      dark and metallic; the tilt drives it subterranean. Anchors the dark end.
   {
     id: 'black-ember',
     name: 'Black Ember',
-    hint: 'Struck metal crushed to its darkest ember — a smouldering, subterranean clang.',
+    hint: 'A struck metal bowl crushed to its darkest ember — a smouldering, subterranean clang.',
     group: 'Metallic',
-    source: 'metallic-strike',
+    source: 'singing-bowl',
     captureStrategy: 'average',
-    calibrationDb: -2,
+    // Already low and darkened hard — nudge up so it isn't swallowed by the mix.
+    calibrationDb: 1,
     xyMapping: { x: { param: 'tilt', min: -1, max: 0 }, y: { param: 'gate', min: 0, max: 0.6 } },
     patch: patch('black-ember', {
       scale: 'minor',
@@ -880,17 +905,19 @@ export const PRESETS: Preset[] = [
     }),
   },
 
-  // 22 — Shimmer Rise: LIVING harmonic string with an animated SHIMMER stack that
-  //      climbs in bright octave/twelfth overtones. XY slides the whole thing in
-  //      inharmonic shift. Airy, ascending, wide.
+  // 22 — Shimmer Rise: LIVING bowed-metal with an animated SHIMMER stack that
+  //      climbs in bright octave/twelfth overtones. The bowed-metal plate already
+  //      raises its upper overtones over the loop (a climbing centroid), so the
+  //      "rise" is built into the source; XY slides the whole thing in inharmonic
+  //      shift. Eerie, ascending, wide.
   {
     id: 'shimmer-rise',
     name: 'Shimmer Rise',
-    hint: 'A living string climbing into bright shimmering overtones — sweep X to lift it inharmonic.',
+    hint: 'A bowed metal plate climbing into bright shimmering overtones — sweep X to lift it inharmonic.',
     group: 'Living',
-    source: 'harmonic-string',
+    source: 'bowed-metal',
     captureStrategy: 'evolving',
-    calibrationDb: -4,
+    calibrationDb: -3,
     xyMapping: { x: { param: 'shift', min: 0, max: 12 }, y: { param: 'reverbAmount', min: 0.2, max: 0.8 } },
     patch: patch('shimmer-rise', {
       scale: 'mixolydian',
